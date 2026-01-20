@@ -10,6 +10,9 @@ RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 # Definimos um DATABASE_URL padrão (não conecta, só valida schema/env).
 ENV DATABASE_URL=postgresql://user:pass@postgres:5432/cinema
 
+# Dependências nativas necessárias para o Prisma e OpenSSL
+RUN apk add --no-cache openssl libc6-compat
+
 # Copia manifests primeiro para aproveitar cache do Docker
 COPY package.json yarn.lock ./
 
