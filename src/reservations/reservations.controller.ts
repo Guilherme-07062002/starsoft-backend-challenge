@@ -1,19 +1,25 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
 import { CreateReservationDto, UpdateReservationDto } from './dto/reservation.dtos';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Reservations (Reservas)')
 @Controller('reservations')
 export class ReservationsController {
   constructor(private readonly reservationsService: ReservationsService) {}
 
   @Post()
-  create(@Body() createReservationDto: CreateReservationDto) {
-    return this.reservationsService.create(createReservationDto);
+  @ApiOperation({ summary: 'Cria uma reserva temporária de assento' })
+  @ApiResponse({ status: 201, description: 'Reserva criada.' })
+  @ApiResponse({ status: 409, description: 'Assento já ocupado (Race Condition).' })
+  async create(@Body() createReservationDto: CreateReservationDto) {
+    return await this.reservationsService.create(createReservationDto);
   }
 
   @Get()
-  findAll() {
-    return this.reservationsService.findAll();
+  @ApiOperation({ summary: 'Lista todas as reservas' })
+  async findAll() {
+    return await this.reservationsService.findAll();
   }
 
   @Get(':id')

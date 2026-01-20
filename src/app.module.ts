@@ -4,12 +4,14 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { ReservationsModule } from './reservations/reservations.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
     PrismaModule,
     SessionsModule,
-    ReservationsModule
+    ReservationsModule,
+    RedisModule
   ],
   controllers: [AppController],
   providers: [AppService],
