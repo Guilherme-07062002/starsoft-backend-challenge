@@ -9,8 +9,9 @@ import { RedisModule } from './redis/redis.module';
 import { MessagingModule } from './rabbitmq/rabbitmq.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './notifications/notifications.module';
-import { seconds, ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { seconds, ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 
 @Module({
   imports: [
@@ -45,7 +46,7 @@ import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
     AppService,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: AppThrottlerGuard // Usa o guard customizado
     },
   ],
 })
