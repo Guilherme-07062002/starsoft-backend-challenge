@@ -45,7 +45,7 @@ O fluxo de confirmação de pagamento não bloqueia a resposta ao usuário. Apó
     docker compose up --build
     ```
 3.  Acesse a Documentação da API (Swagger):
-    * Abra `http://localhost:3000/api` no navegador.
+    * Abra `http://localhost:3000/api-docs` no navegador.
 
 ## 🧪 Testes
 
