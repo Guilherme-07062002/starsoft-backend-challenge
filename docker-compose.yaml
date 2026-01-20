@@ -22,9 +22,12 @@ services:
       # sobrescreva a do container (Linux), evitando erros de binário.
       - /usr/src/app/node_modules
     depends_on:
-      - postgres
-      - redis
-      - rabbitmq
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     restart: unless-stopped
     networks: # Boa prática: isolar em uma rede bridge
       - cinema-network
