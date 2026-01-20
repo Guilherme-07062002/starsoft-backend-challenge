@@ -1,0 +1,68 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  // Importante para funcionar no Docker (Linux) e no seu host se precisar
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"] 
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  movieId   String   // ID do filme (pode ser externo ou string simples)
+  room      String   // "Sala 1", "IMAX", etc
+  price     Decimal  @db.Decimal(10, 2)
+  startsAt  DateTime
+  seats     Seat[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sessions")
+}
+
+enum SeatStatus {
+  AVAILABLE
+  LOCKED    // Bloqueado temporariamente pelo Redis/Reserva
+  SOLD      // Vendido definitivamente
+}
+
+model Seat {
+  id        String      @id @default(uuid())
+  sessionId String
+  row       String      // "A", "B", "C"
+  number    Int         // 1, 2, 3
+  status    SeatStatus  @default(AVAILABLE)
+  
+  session   Session     @relation(fields: [sessionId], references: [id])
+  reservations Reservation[]
+
+  // Garante que não existe assento A-1 duplicado na mesma sessão
+  @@unique([sessionId, row, number])
+  @@map("seats")
+}
+
+enum ReservationStatus {
+  PENDING   // Aguardando pagamento (30s)
+  CONFIRMED // Pago
+  CANCELLED // Expirou ou falhou
+}
+
+model Reservation {
+  id        String            @id @default(uuid())
+  userId    String            // ID do usuário
+  seatId    String
+  status    ReservationStatus @default(PENDING)
+  expiresAt DateTime          // O momento exato que deve expirar
+  
+  seat      Seat     @relation(fields: [seatId], references: [id])
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("reservations")
+}
