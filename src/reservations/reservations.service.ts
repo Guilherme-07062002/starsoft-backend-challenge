@@ -18,7 +18,7 @@ export class ReservationsService {
 
     // 1. ORDENAÇÃO PARA EVITAR DEADLOCK (Critical Path)
     // Se User A pede [1, 2] e User B pede [2, 1], ambos tentarão lockar 1 primeiro.
-    const sortedSeatIds = [...seatIds].sort(); 
+    const sortedSeatIds = [...seatIds].sort();
 
     // 2. Validação no Banco (Existe? Está Disponível?)
     // Buscamos todos de uma vez
@@ -35,7 +35,11 @@ export class ReservationsService {
 
     const soldSeats = seats.filter(s => s.status !== SeatStatus.AVAILABLE);
     if (soldSeats.length > 0) {
-      throw new ConflictException(`Os assentos ${soldSeats.map(s => s.number).join(', ')} já foram vendidos.`);
+      if (soldSeats.length === 1) {
+        throw new ConflictException(`O assento ${soldSeats[0].number} já foi reservado.`);
+      } else {
+        throw new ConflictException(`Os assentos ${soldSeats.map(s => s.number).join(', ')} já foram reservados.`);
+      }
     }
 
     // 3. TENTATIVA DE LOCK NO REDIS (Iterativa)
