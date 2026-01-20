@@ -168,6 +168,21 @@ export class ReservationsService {
     };
   }
 
+  async findUserHistory(userId: string) {
+    return await this.prisma.reservation.findMany({
+      where: {
+        userId: userId,
+        status: ReservationStatus.CONFIRMED,
+      },
+      include: {
+        seat: {
+          include: { session: true } // Traz detalhes do assento e do filme/sessão
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
   // Apenas para listar e verificarmos
   findAll() {
     return this.prisma.reservation.findMany();
