@@ -1,0 +1,94 @@
+services:
+  api:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      # Hot Reload em sistemas Windows/WSL
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
+      # Conexões
+      - DATABASE_URL=postgresql://user:pass@postgres:5432/cinema
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - RABBITMQ_URI=amqp://user:pass@rabbitmq:5672
+    command: npm run start:dev
+    volumes:
+      - .:/usr/src/app
+      # AJUSTE 2: Volume anônimo para node_modules
+      # Isso impede que a pasta node_modules do seu host (Windows/Mac)
+      # sobrescreva a do container (Linux), evitando erros de binário.
+      - /usr/src/app/node_modules
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    restart: unless-stopped
+    networks: # Boa prática: isolar em uma rede bridge
+      - cinema-network
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: cinema
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d cinema"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - cinema-network
+
+  redis:
+    image: redis:alpine
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - cinema-network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    environment:
+      RABBITMQ_DEFAULT_USER: user
+      RABBITMQ_DEFAULT_PASS: pass
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks:
+      - cinema-network
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  # Removi o 'node_modules' daqui para usar volume anônimo direto no serviço
+
+networks:
+  cinema-network:
+    driver: bridge
