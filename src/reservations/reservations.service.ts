@@ -18,7 +18,7 @@ export class ReservationsService {
 
     // 1. ORDENAÇÃO PARA EVITAR DEADLOCK (Critical Path)
     // Se User A pede [1, 2] e User B pede [2, 1], ambos tentarão lockar 1 primeiro.
-    const sortedSeatIds = [...seatIds].sort();
+    const sortedSeatIds = [...seatIds].sort(); 
 
     // 2. Validação no Banco (Existe? Está Disponível?)
     // Buscamos todos de uma vez

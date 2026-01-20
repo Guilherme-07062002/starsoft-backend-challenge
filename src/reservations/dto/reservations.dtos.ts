@@ -7,7 +7,7 @@ export class CreateReservationDto {
     @IsNotEmpty({ message: 'É necessário informar os assentos a serem reservados' })
     @IsArray({ message: 'seatIds deve ser um array de IDs' })
     @ArrayMinSize(1, { message: 'Deve haver ao menos um assento na reserva' })
-    @ArrayUnique({ message: 'A lista de assentos contém identificadores duplicados.' })
+    @ArrayUnique({ message: 'É necessário informar assentos diferentes para a reserva' })
     @IsUUID('4', { each: true, message: 'Cada ID do assento deve ser um UUID válido' })
     seatIds: string[];
 
