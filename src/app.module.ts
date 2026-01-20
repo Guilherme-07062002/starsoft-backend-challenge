@@ -7,15 +7,20 @@ import { ReservationsModule } from './reservations/reservations.module';
 import { RedisModule } from './redis/redis.module';
 import { MessagingModule } from './rabbitmq/rabbitmq.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
+    // Infra
+    ScheduleModule.forRoot(), // O forRoot inicializa o módulo de agendamento
     PrismaModule,
-    SessionsModule,
-    ReservationsModule,
     RedisModule,
     MessagingModule,
-    ScheduleModule.forRoot(), // O forRoot inicializa o módulo de agendamento
+
+    // Features
+    SessionsModule,
+    ReservationsModule,
+    NotificationsModule
   ],
   controllers: [AppController],
   providers: [AppService],
