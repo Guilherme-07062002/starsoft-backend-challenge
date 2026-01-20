@@ -8,4 +8,11 @@ if [ ! -d "node_modules" ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then
   yarn install --frozen-lockfile
 fi
 
+# Se o Prisma Client não foi gerado (comum quando o schema não estava presente no install)
+# gera antes de iniciar o app, para evitar erros de tipos/exports.
+if [ ! -f "node_modules/.prisma/client/index.js" ]; then
+  echo "[entrypoint] Prisma Client não encontrado; gerando..."
+  yarn prisma generate
+fi
+
 exec "$@"

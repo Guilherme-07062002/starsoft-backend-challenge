@@ -3,6 +3,9 @@ FROM node:20-alpine
 
 WORKDIR /usr/src/app
 
+# Dependências nativas necessárias para o Prisma e OpenSSL
+RUN apk add --no-cache openssl libc6-compat
+
 # O Node 20 já vem com Corepack; usamos isso para fixar a versão do Yarn
 RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 
@@ -10,11 +13,12 @@ RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 # Definimos um DATABASE_URL padrão (não conecta, só valida schema/env).
 ENV DATABASE_URL=postgresql://user:pass@postgres:5432/cinema
 
-# Dependências nativas necessárias para o Prisma e OpenSSL
-RUN apk add --no-cache openssl libc6-compat
-
 # Copia manifests primeiro para aproveitar cache do Docker
 COPY package.json yarn.lock ./
+
+# Copia o schema do Prisma antes do install para o postinstall/generate do @prisma/client
+# não falhar por falta de `prisma/schema.prisma`.
+COPY prisma ./prisma
 
 # Instala dependências (inclui devDependencies pro Nest CLI funcionar)
 RUN yarn install --frozen-lockfile
@@ -22,8 +26,12 @@ RUN yarn install --frozen-lockfile
 # Copia o resto do código
 COPY . .
 
+# Garante que o Prisma Client foi gerado (tipos/exports como PrismaClient, SeatStatus, etc.)
+RUN yarn prisma generate
+
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+	&& chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000
 
