@@ -1,12 +1,22 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
 import { CreateReservationDto, UpdateReservationDto } from './dto/reservation.dtos';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Reservations (Reservas)')
 @Controller('reservations')
 export class ReservationsController {
   constructor(private readonly reservationsService: ReservationsService) {}
+
+  @Post(':id/pay')
+  @HttpCode(200) // Para indicar que é 200 OK, não 201 Created
+  @ApiOperation({ summary: 'Confirma o pagamento de uma reserva' })
+  @ApiResponse({ status: 200, description: 'Pagamento confirmado e assento vendido.' })
+  @ApiResponse({ status: 400, description: 'Reserva expirada.' })
+  @ApiParam({ name: 'id', description: 'ID da reserva que será confirmada' })
+  async confirmPayment(@Param('id') id: string) {
+    return await this.reservationsService.confirmPayment(id);
+  }
 
   @Post()
   @ApiOperation({ summary: 'Cria uma reserva temporária de assento' })
