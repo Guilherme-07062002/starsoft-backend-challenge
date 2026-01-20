@@ -5,7 +5,7 @@ set -e
 # Garante que as dependências existam antes de subir o Nest em modo watch.
 if [ ! -d "node_modules" ] || [ -z "$(ls -A node_modules 2>/dev/null)" ]; then
   echo "[entrypoint] node_modules vazio; instalando dependências..."
-  npm ci
+  yarn install --frozen-lockfile
 fi
 
 exec "$@"
