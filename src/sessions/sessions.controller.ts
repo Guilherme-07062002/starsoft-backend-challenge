@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 import { CreateSessionDto, UpdateSessionDto } from './dto/sessions.dtos';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Sessions (Sessões de Cinema)')
 @Controller('sessions')
@@ -21,8 +21,10 @@ export class SessionsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.sessionsService.findOne(+id);
+  @ApiParam({ name: 'id', description: 'ID da sessão de cinema' })
+  @ApiOperation({ summary: 'Obtém os detalhes de uma sessão específica, incluindo assentos disponíveis em tempo real.'})
+  async findOne(@Param('id') id: string) {
+    return await this.sessionsService.findOne(id);
   }
 
   @Patch(':id')
