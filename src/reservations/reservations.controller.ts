@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
-import { CreateReservationDto, UpdateReservationDto } from './dto/reservation.dtos';
+import { CreateReservationDto, UpdateReservationDto } from './dto/reservations.dtos';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Reservations (Reservas)')

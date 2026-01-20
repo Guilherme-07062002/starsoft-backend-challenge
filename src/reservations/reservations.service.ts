@@ -1,7 +1,7 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { CreateReservationDto, UpdateReservationDto } from './dto/reservation.dtos';
-import { PrismaService } from 'src/prisma/prisma.service';
 import Redis from 'ioredis';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { CreateReservationDto, UpdateReservationDto } from './dto/reservations.dtos';
+import { PrismaService } from 'src/prisma/prisma.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ReservationStatus, SeatStatus } from '@prisma/client';
 
@@ -14,52 +14,90 @@ export class ReservationsService {
   ) {}
 
   async create(dto: CreateReservationDto) {
-    const { seatId, userId } = dto;
+    const { seatIds, userId } = dto;
 
-    // 1. Verificar se o assento existe no banco (Sanity Check)
-    const seat = await this.prisma.seat.findUnique({
-      where: { id: seatId },
+    // 1. ORDENAÇÃO PARA EVITAR DEADLOCK (Critical Path)
+    // Se User A pede [1, 2] e User B pede [2, 1], ambos tentarão lockar 1 primeiro.
+    const sortedSeatIds = [...seatIds].sort(); 
+
+    // 2. Validação no Banco (Existe? Está Disponível?)
+    // Buscamos todos de uma vez
+    const seats = await this.prisma.seat.findMany({
+      where: { 
+        id: { in: sortedSeatIds } 
+      }
     });
 
-    if (!seat) throw new NotFoundException('Assento não encontrado');
-
-    if (seat.status !== SeatStatus.AVAILABLE) throw new ConflictException('Este assento já foi vendido definitivamente.');
-
-    // 2. TENTATIVA DE LOCK NO REDIS
-    // Chave única por assento. TTL de 30 segundos (30000ms).
-    const lockKey = `lock:seat:${seatId}`;
-    
-    // O comando SET com 'NX' (Not Exists) é atômico.
-    // Retorna 'OK' se conseguiu criar. Retorna null se já existia.
-    const acquiredLock = await this.redis.set(lockKey, userId, 'PX', 30000, 'NX');
-
-    if (!acquiredLock) {
-      // SE CAIR AQUI: Race Condition evitada! 
-      // Alguém clicou 1 milissegundo antes.
-      throw new ConflictException('Assento reservado por outro usuário. Tente novamente em 30s.');
+    // Validações básicas
+    if (seats.length !== sortedSeatIds.length) {
+      throw new NotFoundException('Um ou mais assentos não foram encontrados.');
     }
 
-    // 3. Se conseguiu o lock, cria a reserva no Postgres
-    try {
-      const reservation = await this.prisma.reservation.create({
-        data: {
-          seatId: seatId,
-          userId: userId,
-          status: 'PENDING',
-          expiresAt: new Date(Date.now() + 30000), // Expira em 30s
-        },
-      });
+    const soldSeats = seats.filter(s => s.status !== SeatStatus.AVAILABLE);
+    if (soldSeats.length > 0) {
+      throw new ConflictException(`Os assentos ${soldSeats.map(s => s.number).join(', ')} já foram vendidos.`);
+    }
 
-      return {
-        message: 'Reserva temporária realizada com sucesso!',
-        reservationId: reservation.id,
-        expiresInSeconds: 30,
-      };
+    // 3. TENTATIVA DE LOCK NO REDIS (Iterativa)
+    const acquiredLocks: string[] = [];
+    const TTL = 30000; // 30s
+
+    try {
+      for (const seatId of sortedSeatIds) {
+        const lockKey = `lock:seat:${seatId}`;
+        const acquired = await this.redis.set(lockKey, userId, 'PX', TTL, 'NX');
+
+        if (!acquired) {
+          // Falhou no meio do caminho? Aborta tudo!
+          throw new ConflictException(`O assento ${seatId} acabou de ser reservado por outro usuário.`);
+        }
+        acquiredLocks.push(lockKey);
+      }
     } catch (error) {
-      // Rollback manual do Redis se o banco falhar (muito raro, mas boa prática)
-      await this.redis.del(lockKey);
+      // ROLLBACK DOS LOCKS (Se pegou 2 de 3, solta os 2)
+      if (acquiredLocks.length > 0) {
+        await this.redis.del(...acquiredLocks);
+      }
       throw error;
     }
+
+    // 4. Se chegou aqui, todos os locks são nossos. Cria no Postgres.
+    // Precisamos de um ID de reserva único para o grupo ou reservas individuais?
+    // O requisito diz "Retornar ID da reserva". Geralmente é um "Order ID" ou cria várias reservas.
+    // Vamos criar várias reservas (uma por assento) mas retornar um Group ID seria ideal.
+    // Para simplificar e manter compatibilidade com seu schema atual, vamos criar N reservas.
+    
+    const expiresAt = new Date(Date.now() + TTL);
+
+    // Usamos transaction para garantir que todas gravam
+    const reservations = await this.prisma.$transaction(
+      sortedSeatIds.map(seatId => 
+        this.prisma.reservation.create({
+          data: {
+            seatId,
+            userId,
+            status: 'PENDING',
+            expiresAt,
+          }
+        })
+      )
+    );
+
+    // 5. Publicar Evento (Resolvendo lacuna 3)
+    // Como são várias, podemos publicar um evento de "BatchReserved" ou loop.
+    // Vamos no simples: Loop
+    reservations.forEach(res => {
+      this.amqpConnection.publish('cinema_events', 'reservation.created', { ...res }); 
+    });
+
+    return {
+      message: 'Reservas realizadas com sucesso!',
+      // Retorna lista de IDs
+      reservationIds: reservations.map(r => r.id), 
+      // Resolvendo lacuna 2.2: Retornar timestamp explícito
+      expiresAt: expiresAt.toISOString(), 
+      expiresInSeconds: 30,
+    };
   }
 
   async confirmPayment(reservationId: string) {
