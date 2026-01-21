@@ -1,23 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReservationsService } from './reservations.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ReservationStatus, SeatStatus } from '@prisma/client';
 
 // Mocks (Dublês dos serviços reais)
+// Separar o "tx" (transação) do prisma normal ajuda a simular o callback do $transaction.
+const mockTx = {
+  reservation: {
+    updateMany: jest.fn(),
+    findUnique: jest.fn(),
+  },
+  seat: {
+    updateMany: jest.fn(),
+  },
+  sale: {
+    upsert: jest.fn(),
+  },
+};
+
 const mockPrismaService = {
   seat: {
     findMany: jest.fn(),
   },
   reservation: {
     create: jest.fn(),
+    findUnique: jest.fn(),
+    update: jest.fn(),
   },
-  // Prisma usa `$transaction` (não `transaction`).
-  // Suporta as 2 assinaturas: callback e array de Promises.
   $transaction: jest.fn(async (arg) => {
     if (typeof arg === 'function') {
-      return arg(mockPrismaService);
+      return arg(mockTx);
     }
 
     if (Array.isArray(arg)) {
@@ -31,6 +45,7 @@ const mockPrismaService = {
 const mockRedisClient = {
   set: jest.fn(),
   del: jest.fn(),
+  get: jest.fn(),
 };
 
 const mockAmqpConnection = {
@@ -169,6 +184,114 @@ describe('ReservationsService', () => {
 
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
       expect(mockRedisClient.set).not.toHaveBeenCalled(); // Nem tenta ir no Redis
+    });
+  });
+
+  describe('confirmPayment', () => {
+    it('deve confirmar pagamento e vender o assento (Happy Path)', async () => {
+      const reservationId = 'res-1';
+
+      mockPrismaService.reservation.findUnique.mockResolvedValue({
+        id: reservationId,
+        userId: 'user-1',
+        seatId: 'seat-1',
+        status: ReservationStatus.PENDING,
+        expiresAt: new Date(Date.now() + 30_000),
+        seat: {
+          id: 'seat-1',
+          session: {
+            price: 25,
+          },
+        },
+      });
+
+      mockTx.reservation.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.seat.updateMany.mockResolvedValue({ count: 1 });
+      mockTx.sale.upsert.mockResolvedValue({ id: 'sale-1' });
+      mockTx.reservation.findUnique.mockResolvedValue({
+        id: reservationId,
+        userId: 'user-1',
+        seatId: 'seat-1',
+        status: ReservationStatus.CONFIRMED,
+        expiresAt: new Date(Date.now() + 30_000),
+      });
+
+      const result = await service.confirmPayment(reservationId);
+
+      expect(result).toHaveProperty(
+        'message',
+        'Pagamento confirmado! Bom filme.',
+      );
+      expect(mockAmqpConnection.publish).toHaveBeenCalledWith(
+        'cinema_events',
+        'payment.confirmed',
+        expect.objectContaining({
+          reservationId,
+          userId: 'user-1',
+          seatId: 'seat-1',
+        }),
+        { persistent: true },
+      );
+      expect(mockRedisClient.del).toHaveBeenCalledWith('lock:seat:seat-1');
+    });
+
+    it('não deve publicar evento novamente se a reserva já estiver CONFIRMED (idempotência)', async () => {
+      const reservationId = 'res-confirmed';
+
+      mockPrismaService.reservation.findUnique.mockResolvedValue({
+        id: reservationId,
+        userId: 'user-1',
+        seatId: 'seat-1',
+        status: ReservationStatus.CONFIRMED,
+        expiresAt: new Date(Date.now() + 30_000),
+        seat: {
+          id: 'seat-1',
+          session: {
+            price: 25,
+          },
+        },
+      });
+
+      const result = await service.confirmPayment(reservationId);
+
+      expect(result).toEqual({
+        message: 'Pagamento já foi processado anteriormente.',
+      });
+      expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
+      expect(mockAmqpConnection.publish).not.toHaveBeenCalled();
+    });
+
+    it('deve cancelar e lançar BadRequestException se a reserva expirou', async () => {
+      const reservationId = 'res-expired';
+
+      mockPrismaService.reservation.findUnique.mockResolvedValue({
+        id: reservationId,
+        userId: 'user-1',
+        seatId: 'seat-1',
+        status: ReservationStatus.PENDING,
+        expiresAt: new Date(Date.now() - 1000),
+        seat: {
+          id: 'seat-1',
+          session: {
+            price: 25,
+          },
+        },
+      });
+
+      mockPrismaService.reservation.update.mockResolvedValue({
+        id: reservationId,
+        status: ReservationStatus.CANCELLED,
+      });
+
+      await expect(service.confirmPayment(reservationId)).rejects.toThrow(
+        BadRequestException,
+      );
+
+      expect(mockPrismaService.reservation.update).toHaveBeenCalledWith({
+        where: { id: reservationId },
+        data: { status: ReservationStatus.CANCELLED },
+      });
+      expect(mockAmqpConnection.publish).not.toHaveBeenCalled();
     });
   });
 });

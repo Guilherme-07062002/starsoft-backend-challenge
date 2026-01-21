@@ -243,7 +243,7 @@ export class ReservationsService {
 
     // 3. Transação: Confirma Reserva E Marca Assento como Vendido
     // Observação: usamos updateMany para garantir consistência sob concorrência.
-    const result = await this.prisma.$transaction(async (tx) => {
+    const txResult = await this.prisma.$transaction(async (tx) => {
       const confirmAttempt = await tx.reservation.updateMany({
         where: {
           id: reservationId,
@@ -259,7 +259,7 @@ export class ReservationsService {
         });
 
         if (latest?.status === ReservationStatus.CONFIRMED) {
-          return latest;
+          return { reservation: latest, confirmedNow: false };
         }
 
         if (latest?.status === ReservationStatus.CANCELLED) {
@@ -299,30 +299,36 @@ export class ReservationsService {
         update: {},
       });
 
-      return await tx.reservation.findUnique({
+      const updated = await tx.reservation.findUnique({
         where: { id: reservationId },
       });
+
+      if (!updated) {
+        throw new NotFoundException('Reserva não encontrada.');
+      }
+
+      return { reservation: updated, confirmedNow: true };
     });
 
-    if (!result) {
-      throw new NotFoundException('Reserva não encontrada.');
-    }
+    const result = txResult.reservation;
 
     // 4. Publica Evento no RabbitMQ (Fire and Forget)
     // Routing Key: "payment.confirmed"
-    const sessionPrice = reservation.seat.session.price;
-    this.amqpConnection.publish(
-      'cinema_events',
-      'payment.confirmed',
-      {
-        reservationId: result.id,
-        userId: result.userId,
-        seatId: reservation.seatId,
-        amount: sessionPrice.toString(),
-        timestamp: new Date().toISOString(),
-      },
-      { persistent: true },
-    );
+    if (txResult.confirmedNow) {
+      const sessionPrice = reservation.seat.session.price;
+      this.amqpConnection.publish(
+        'cinema_events',
+        'payment.confirmed',
+        {
+          reservationId: result.id,
+          userId: result.userId,
+          seatId: reservation.seatId,
+          amount: sessionPrice.toString(),
+          timestamp: new Date().toISOString(),
+        },
+        { persistent: true },
+      );
+    }
 
     // Limpeza Opcional: Remove o Lock do Redis antecipadamente já que vendeu
     await this.redis.del(`lock:seat:${reservation.seatId}`);
