@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CreateReservationDto } from './dto/reservations.dtos';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ReservationStatus, SeatStatus } from '@prisma/client';
 
