@@ -131,7 +131,7 @@ curl -X POST http://localhost:3000/reservations/<reservation-id>/pay
 ```
 
 - `GET /reservations/:id` detalhes da reserva
-- `GET /users/:userId/reservations` reservas de um usuário
+- `GET /reservations/user/:userId` reservas de um usuário
 
 ### Vendas
 

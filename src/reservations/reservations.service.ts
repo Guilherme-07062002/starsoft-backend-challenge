@@ -208,6 +208,8 @@ export class ReservationsService {
   }
 
   async confirmPayment(reservationId: string) {
+    const now = new Date();
+
     // 1. Busca a reserva
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
@@ -230,7 +232,7 @@ export class ReservationsService {
     }
 
     // Verifica se já passou do tempo de expiração do banco
-    if (new Date() > reservation.expiresAt) {
+    if (now > reservation.expiresAt) {
       // Opcional: Já marca como cancelada se estiver vencida
       await this.prisma.reservation.update({
         where: { id: reservationId },
@@ -240,43 +242,93 @@ export class ReservationsService {
     }
 
     // 3. Transação: Confirma Reserva E Marca Assento como Vendido
-    const result = await this.prisma.$transaction(async (tx) => {
-      const updatedReservation = await tx.reservation.update({
-        where: { id: reservationId },
+    // Observação: usamos updateMany para garantir consistência sob concorrência.
+    const txResult = await this.prisma.$transaction(async (tx) => {
+      const confirmAttempt = await tx.reservation.updateMany({
+        where: {
+          id: reservationId,
+          status: ReservationStatus.PENDING,
+          expiresAt: { gte: now },
+        },
         data: { status: ReservationStatus.CONFIRMED },
       });
 
-      await tx.seat.update({
-        where: { id: reservation.seatId },
-        data: { status: SeatStatus.SOLD }, // Isso impede que o assento volte a ficar livre
-      });
+      if (confirmAttempt.count === 0) {
+        const latest = await tx.reservation.findUnique({
+          where: { id: reservationId },
+        });
 
-      // Cria um registro na tabela de vendas
-      await tx.sale.create({
+        if (latest?.status === ReservationStatus.CONFIRMED) {
+          return { reservation: latest, confirmedNow: false };
+        }
+
+        if (latest?.status === ReservationStatus.CANCELLED) {
+          throw new BadRequestException(
+            'Esta reserva já foi cancelada ou expirou.',
+          );
+        }
+
+        // Em caso de corrida ou inconsistência, falha de forma segura
+        throw new ConflictException(
+          'Não foi possível confirmar o pagamento (reserva já processada).',
+        );
+      }
+
+      const seatSold = await tx.seat.updateMany({
+        where: {
+          id: reservation.seatId,
+          status: SeatStatus.AVAILABLE,
+        },
         data: {
-          reservationId: reservationId,
-          amount: reservation.seat.session.price,
+          status: SeatStatus.SOLD,
         },
       });
 
-      return updatedReservation;
+      if (seatSold.count === 0) {
+        // Se o assento já não está AVAILABLE, aborta para evitar inconsistência
+        throw new ConflictException('Assento já foi vendido.');
+      }
+
+      // Cria/garante registro de venda (idempotência)
+      await tx.sale.upsert({
+        where: { reservationId },
+        create: {
+          reservationId,
+          amount: reservation.seat.session.price,
+        },
+        update: {},
+      });
+
+      const updated = await tx.reservation.findUnique({
+        where: { id: reservationId },
+      });
+
+      if (!updated) {
+        throw new NotFoundException('Reserva não encontrada.');
+      }
+
+      return { reservation: updated, confirmedNow: true };
     });
+
+    const result = txResult.reservation;
 
     // 4. Publica Evento no RabbitMQ (Fire and Forget)
     // Routing Key: "payment.confirmed"
-    const sessionPrice = reservation.seat.session.price;
-    this.amqpConnection.publish(
-      'cinema_events',
-      'payment.confirmed',
-      {
-        reservationId: result.id,
-        userId: result.userId,
-        seatId: reservation.seatId,
-        amount: sessionPrice.toString(),
-        timestamp: new Date().toISOString(),
-      },
-      { persistent: true },
-    );
+    if (txResult.confirmedNow) {
+      const sessionPrice = reservation.seat.session.price;
+      this.amqpConnection.publish(
+        'cinema_events',
+        'payment.confirmed',
+        {
+          reservationId: result.id,
+          userId: result.userId,
+          seatId: reservation.seatId,
+          amount: sessionPrice.toString(),
+          timestamp: new Date().toISOString(),
+        },
+        { persistent: true },
+      );
+    }
 
     // Limpeza Opcional: Remove o Lock do Redis antecipadamente já que vendeu
     await this.redis.del(`lock:seat:${reservation.seatId}`);
@@ -291,6 +343,26 @@ export class ReservationsService {
     return await this.prisma.reservation.findMany({
       where: { userId },
     });
+  }
+
+  async findOne(id: string) {
+    const reservation = await this.prisma.reservation.findUnique({
+      where: { id },
+      include: {
+        seat: {
+          include: {
+            session: true,
+          },
+        },
+        sale: true,
+      },
+    });
+
+    if (!reservation) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
+
+    return reservation;
   }
 
   async findAll() {

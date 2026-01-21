@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { PinoLogger } from 'nestjs-pino';
+import { exponentialRetryErrorHandler } from '../rabbitmq/rabbitmq.retry';
 
 @Injectable()
 export class NotificationsService {
@@ -14,6 +15,7 @@ export class NotificationsService {
     routingKey: 'reservation.created',
     queue: 'reservation_created_queue',
     queueOptions: { durable: true },
+    errorHandler: exponentialRetryErrorHandler,
   })
   public async handleReservationCreated(msg: any) {
     // Exemplo de consumidor: auditoria/analytics/observabilidade.
@@ -30,6 +32,7 @@ export class NotificationsService {
     routingKey: 'payment.confirmed', // A chave que usamos no publish
     queue: 'email_notification_queue', // Nome da fila (se cair o app, as msg ficam aqui)
     queueOptions: { durable: true },
+    errorHandler: exponentialRetryErrorHandler,
   })
   public async handlePaymentConfirmed(msg: any) {
     // Simula um processamento pesado (envio de email)
@@ -44,7 +47,7 @@ export class NotificationsService {
       `✅ [EMAIL SERVICE] Email de confirmação enviado para o assento ${msg.seatId}!`,
     );
 
-    // Se der erro aqui, o RabbitMQ tenta entregar de novo automaticamente!
+    // Se der erro aqui, cai no retry com backoff (cinema_retry_queue) e depois DLQ.
   }
 
   // 2. (Bônus) Escuta o evento de RESERVA EXPIRADA (que seu Cron Job dispara)
@@ -53,6 +56,7 @@ export class NotificationsService {
     routingKey: 'reservation.expired',
     queue: 'analytics_queue', // Fila diferente, consumidor diferente
     queueOptions: { durable: true },
+    errorHandler: exponentialRetryErrorHandler,
   })
   public async handleReservationExpired(msg: any) {
     this.logger.warn(
@@ -66,6 +70,7 @@ export class NotificationsService {
     routingKey: 'seat.released',
     queue: 'seat_released_queue',
     queueOptions: { durable: true },
+    errorHandler: exponentialRetryErrorHandler,
   })
   public async handleSeatReleased(msg: any) {
     this.logger.info(
