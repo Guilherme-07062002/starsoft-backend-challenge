@@ -1,7 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReservationsService } from './reservations.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ReservationStatus, SeatStatus } from '@prisma/client';
 
@@ -185,6 +189,46 @@ describe('ReservationsService', () => {
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
       expect(mockRedisClient.set).not.toHaveBeenCalled(); // Nem tenta ir no Redis
     });
+
+    it('deve lançar NotFoundException se o assento não existir', async () => {
+      const dto = {
+        seatIds: ['seat-exists', 'seat-non-existent'],
+        userId: 'user-1',
+      };
+
+      // Simula que o banco só retornou 1 dos 2 assentos pedidos
+      mockPrismaService.seat.findMany.mockResolvedValue([
+        {
+          id: 'seat-exists',
+          status: SeatStatus.AVAILABLE,
+        },
+      ]);
+
+      await expect(service.create(dto)).rejects.toThrow(NotFoundException);
+    });
+
+    it('deve fazer rollback (deletar locks) se falhar no meio da aquisição', async () => {
+      const dto = { seatIds: ['seat-1', 'seat-2', 'seat-3'], userId: 'user-1' };
+
+      mockPrismaService.seat.findMany.mockResolvedValue([
+        { id: 'seat-1', status: SeatStatus.AVAILABLE },
+        { id: 'seat-2', status: SeatStatus.AVAILABLE },
+        { id: 'seat-3', status: SeatStatus.AVAILABLE },
+      ]);
+
+      // Simula sucesso nos 2 primeiros e falha no 3º
+      mockRedisClient.set.mockResolvedValueOnce('OK');
+      mockRedisClient.set.mockResolvedValueOnce('OK');
+      mockRedisClient.set.mockResolvedValueOnce(null); // Falhou
+
+      await expect(service.create(dto)).rejects.toThrow(ConflictException);
+
+      // VERIFICA O ROLLBACK
+      expect(mockRedisClient.del).toHaveBeenCalledWith(
+        'lock:seat:seat-1',
+        'lock:seat:seat-2',
+      );
+    });
   });
 
   describe('confirmPayment', () => {
@@ -292,6 +336,27 @@ describe('ReservationsService', () => {
         data: { status: ReservationStatus.CANCELLED },
       });
       expect(mockAmqpConnection.publish).not.toHaveBeenCalled();
+    });
+
+    it('deve lançar NotFoundException se a reserva não existir', async () => {
+      mockPrismaService.reservation.findUnique.mockResolvedValue(null);
+
+      await expect(service.confirmPayment('non-existent-id')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('deve lançar BadRequestException se a reserva já estiver CANCELLED', async () => {
+      const reservationId = 'res-cancelled';
+
+      mockPrismaService.reservation.findUnique.mockResolvedValue({
+        id: reservationId,
+        status: ReservationStatus.CANCELLED,
+      });
+
+      await expect(service.confirmPayment(reservationId)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 });
