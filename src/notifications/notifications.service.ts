@@ -10,6 +10,7 @@ export class NotificationsService {
     exchange: 'cinema_events',       // A mesma exchange que definimos no module
     routingKey: 'payment.confirmed', // A chave que usamos no publish
     queue: 'email_notification_queue', // Nome da fila (se cair o app, as msg ficam aqui)
+    queueOptions: { durable: true },
   })
   public async handlePaymentConfirmed(msg: any) {
     // Simula um processamento pesado (envio de email)
@@ -28,6 +29,7 @@ export class NotificationsService {
     exchange: 'cinema_events',
     routingKey: 'reservation.expired',
     queue: 'analytics_queue', // Fila diferente, consumidor diferente
+    queueOptions: { durable: true },
   })
   public async handleReservationExpired(msg: any) {
     this.logger.warn(`📉 [ANALYTICS] O usuário perdeu a reserva ${msg.reservationId}. Motivo: ${msg.reason}`);
@@ -38,6 +40,7 @@ export class NotificationsService {
     exchange: 'cinema_events',
     routingKey: 'seat.released',
     queue: 'seat_released_queue',
+    queueOptions: { durable: true },
   })
   public async handleSeatReleased(msg: any) {
     this.logger.log(

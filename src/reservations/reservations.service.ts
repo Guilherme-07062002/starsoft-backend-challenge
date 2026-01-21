@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { CreateReservationDto, UpdateReservationDto } from './dto/reservations.dtos';
+import { CreateReservationDto } from './dto/reservations.dtos';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ReservationStatus, SeatStatus } from '@prisma/client';
@@ -150,7 +150,12 @@ export class ReservationsService {
     // Como são várias, podemos publicar um evento de "BatchReserved" ou loop.
     // Vamos no simples: Loop
     reservations.forEach(res => {
-      this.amqpConnection.publish('cinema_events', 'reservation.created', { ...res }); 
+      this.amqpConnection.publish(
+        'cinema_events',
+        'reservation.created',
+        { ...res },
+        { persistent: true },
+      );
     });
 
     const response = {
@@ -223,13 +228,18 @@ export class ReservationsService {
     // 4. Publica Evento no RabbitMQ (Fire and Forget)
     // Routing Key: "payment.confirmed"
     const sessionPrice = reservation.seat.session.price;
-    this.amqpConnection.publish('cinema_events', 'payment.confirmed', {
-      reservationId: result.id,
-      userId: result.userId,
-      seatId: reservation.seatId,
-      amount: sessionPrice.toString(),
-      timestamp: new Date().toISOString(),
-    });
+    this.amqpConnection.publish(
+      'cinema_events',
+      'payment.confirmed',
+      {
+        reservationId: result.id,
+        userId: result.userId,
+        seatId: reservation.seatId,
+        amount: sessionPrice.toString(),
+        timestamp: new Date().toISOString(),
+      },
+      { persistent: true },
+    );
     
     // Limpeza Opcional: Remove o Lock do Redis antecipadamente já que vendeu
     await this.redis.del(`lock:seat:${reservation.seatId}`);
@@ -255,21 +265,7 @@ export class ReservationsService {
     });
   }
 
-  // Apenas para listar e verificarmos
-  findAll() {
-    return this.prisma.reservation.findMany();
-  }
-
-  findOne(id: number) {
-    return `This action returns a #${id} reservation`;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  update(id: number, updateReservationDto: UpdateReservationDto) {
-    return `This action updates a #${id} reservation`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} reservation`;
+  async findAll() {
+    return await this.prisma.reservation.findMany();
   }
 }

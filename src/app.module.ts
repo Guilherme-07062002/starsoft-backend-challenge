@@ -35,6 +35,7 @@ import { LoggerModule } from 'nestjs-pino';
     ScheduleModule.forRoot(), // O forRoot inicializa o módulo de agendamento
     LoggerModule.forRoot({
       pinoHttp: {
+        level: (process.env.LOG_LEVEL || 'info').toLowerCase(),
         autoLogging: false, // Opcional: Evita logar cada requisição HTTP automaticamente se achar muito verboso
         redact: ['req.headers.authorization'], // Segurança: Esconde tokens
         

@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { CreateSessionDto, UpdateSessionDto } from './dto/sessions.dtos';
+import { CreateSessionDto } from './dto/sessions.dtos';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SeatStatus } from '@prisma/client';
 import Redis from 'ioredis';
@@ -117,14 +117,5 @@ export class SessionsService {
 
     // Se não tinha assentos livres ou Redis vazio, retorna original
     return session;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  update(id: number, updateSessionDto: UpdateSessionDto) {
-    return `This action updates a #${id} session`;
-  }
-
-  remove(id: number) {
-    return `This action removes a #${id} session`;
   }
 }

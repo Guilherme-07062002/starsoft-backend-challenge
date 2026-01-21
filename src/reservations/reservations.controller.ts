@@ -1,6 +1,6 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Headers, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Headers, HttpCode } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
-import { CreateReservationDto, UpdateReservationDto } from './dto/reservations.dtos';
+import { CreateReservationDto } from './dto/reservations.dtos';
 import { ApiHeader, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Reservations (Reservas)')
@@ -46,20 +46,5 @@ export class ReservationsController {
   @ApiOperation({ summary: 'Lista todas as reservas' })
   async findAll() {
     return await this.reservationsService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.reservationsService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateReservationDto: UpdateReservationDto) {
-    return this.reservationsService.update(+id, updateReservationDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.reservationsService.remove(+id);
   }
 }
