@@ -95,6 +95,7 @@ export class ReservationsCleanupService {
           {
             reservationId: reservation.id,
             seatId: reservation.seatId,
+            userId: reservation.userId,
             reason: 'TIMEOUT',
             timestamp,
           },
@@ -111,6 +112,7 @@ export class ReservationsCleanupService {
             seatId: reservation.seatId,
             reservationId: reservation.id,
             reason: 'RESERVATION_EXPIRED',
+            userId: reservation.userId,
             timestamp,
           },
           { persistent: true },

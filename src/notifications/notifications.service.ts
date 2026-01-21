@@ -26,12 +26,17 @@ export class NotificationsService {
     queueOptions: { durable: true },
     errorHandler: exponentialRetryErrorHandler,
   })
-  public async handleReservationCreated(msg: any) {
+  public async handleReservationCreated(msg: {
+    id: string;
+    userId: string;
+    seatId: string;
+    reservationId: string;
+  }) {
     // Exemplo de consumidor: auditoria/analytics/observabilidade.
     // Se lançar exceção, o RabbitMQ pode reenfileirar a mensagem (dependendo da configuração).
     this.logger.info(
-      `[RESERVATION] Criada reserva ${msg?.id ?? msg?.reservationId ?? '(sem id)'} ` +
-        `para user=${msg?.userId ?? '(sem user)'} seat=${msg?.seatId ?? '(sem seat)'}`,
+      `🔒 [RESERVATION] Criada reserva ${msg?.id ?? msg?.reservationId ?? '(sem id)'} ` +
+        `para o usuário=${msg?.userId ?? '(sem usuário)'} assento=${msg?.seatId ?? '(sem assento)'}`,
     );
   }
 
@@ -46,7 +51,11 @@ export class NotificationsService {
     queueOptions: { durable: true },
     errorHandler: exponentialRetryErrorHandler,
   })
-  public async handlePaymentConfirmed(msg: any) {
+  public async handlePaymentConfirmed(msg: {
+    userId: string;
+    seatId: string;
+    reservationId: string;
+  }) {
     // Simula um processamento pesado (envio de email)
     this.logger.info(
       `📧 [EMAIL SERVICE] Recebido evento de venda para: ${msg.userId}`,
@@ -56,7 +65,7 @@ export class NotificationsService {
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     this.logger.info(
-      `✅ [EMAIL SERVICE] Email de confirmação enviado para o assento ${msg.seatId}!`,
+      `✅ [EMAIL SERVICE] Email de confirmação enviado para usuário ${msg.userId} que comprou o assento ${msg.seatId}!`,
     );
 
     // Se der erro aqui, cai no retry com backoff (cinema_retry_queue) e depois DLQ.
@@ -73,9 +82,13 @@ export class NotificationsService {
     queueOptions: { durable: true },
     errorHandler: exponentialRetryErrorHandler,
   })
-  public async handleReservationExpired(msg: any) {
+  public async handleReservationExpired(msg: {
+    reservationId: string;
+    reason: string;
+    userId: string;
+  }) {
     this.logger.warn(
-      `📉 [ANALYTICS] O usuário perdeu a reserva ${msg.reservationId}. Motivo: ${msg.reason}`,
+      `📉 [ANALYTICS] O usuário ${msg.userId} perdeu a reserva ${msg.reservationId}. Motivo: ${msg.reason}`,
     );
   }
 
@@ -90,7 +103,10 @@ export class NotificationsService {
     queueOptions: { durable: true },
     errorHandler: exponentialRetryErrorHandler,
   })
-  public async handleSeatReleased(msg: any) {
+  public async handleSeatReleased(msg: {
+    seatId: string;
+    reservationId: string;
+  }) {
     this.logger.info(
       `🔓 [SEAT] Assento liberado ${msg.seatId} (reserva: ${msg.reservationId})`,
     );
