@@ -34,14 +34,6 @@ export class ReservationsController {
     return await this.reservationsService.create(createReservationDto, idempotencyKey);
   }
 
-  @Get('history/:userId')
-  @ApiOperation({ summary: 'Obtém o histórico de compras de um usuário' })
-  @ApiParam({ name: 'userId', description: 'ID do usuário' })
-  @ApiResponse({ status: 200, description: 'Histórico de compras do usuário.' })
-  async getUserHistory(@Param('userId') userId: string) {
-    return await this.reservationsService.findUserHistory(userId);
-  }
-
   @Get()
   @ApiOperation({ summary: 'Lista todas as reservas' })
   async findAll() {

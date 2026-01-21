@@ -214,12 +214,20 @@ export class ReservationsService {
     const result = await this.prisma.$transaction(async (tx) => {
       const updatedReservation = await tx.reservation.update({
         where: { id: reservationId },
-        data: { status: 'CONFIRMED' },
+        data: { status: ReservationStatus.CONFIRMED },
       });
 
       await tx.seat.update({
         where: { id: reservation.seatId },
         data: { status: SeatStatus.SOLD }, // Isso impede que o assento volte a ficar livre
+      });
+
+      // Cria um registro na tabela de vendas
+      await tx.sale.create({
+        data: {
+          reservationId: reservationId,
+          amount: reservation.seat.session.price,
+        },
       });
 
       return updatedReservation;
@@ -249,22 +257,7 @@ export class ReservationsService {
       reservation: result,
     };
   }
-
-  async findUserHistory(userId: string) {
-    return await this.prisma.reservation.findMany({
-      where: {
-        userId: userId,
-        status: ReservationStatus.CONFIRMED,
-      },
-      include: {
-        seat: {
-          include: { session: true } // Traz detalhes do assento e do filme/sessão
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    });
-  }
-
+ 
   async findAll() {
     return await this.prisma.reservation.findMany();
   }

@@ -13,6 +13,7 @@ import { seconds, ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { LoggerModule } from 'nestjs-pino';
+import { SalesModule } from './sales/sales.module';
 
 @Module({
   imports: [
@@ -57,7 +58,8 @@ import { LoggerModule } from 'nestjs-pino';
     // Features
     SessionsModule,
     ReservationsModule,
-    NotificationsModule
+    NotificationsModule,
+    SalesModule
   ],
   controllers: [AppController],
   providers: [
