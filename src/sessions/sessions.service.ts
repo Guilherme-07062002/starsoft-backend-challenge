@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { CreateSessionDto, UpdateSessionDto } from './dto/sessions.dtos';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SeatStatus } from '@prisma/client';
@@ -12,6 +12,18 @@ export class SessionsService {
   ) {}
 
   async create(data: CreateSessionDto) {
+    const rowsCount = data.rowsCount ?? 5;
+    const seatsPerRow = data.seatsPerRow ?? 5;
+
+    if (rowsCount > 26) {
+      throw new BadRequestException('A quantidade máxima de fileiras é 26 (A-Z).');
+    }
+
+    const totalSeats = rowsCount * seatsPerRow;
+    if (totalSeats < 16) {
+      throw new BadRequestException('Uma sessão deve ter no mínimo 16 assentos.');
+    }
+
     // Usamos transaction para garantir: Ou cria SESSÃO + ASSENTOS, ou não cria nada.
     return await this.prisma.$transaction(async (tx) => {
       // 1. Cria a Sessão
@@ -24,13 +36,12 @@ export class SessionsService {
         },
       });
 
-      // 2. Gera Assentos (Ex: 5 fileiras de 5 cadeiras = 25 assentos)
-      // O requisito pede mínimo 16. Vamos fazer 25.
-      const rows = ['A', 'B', 'C', 'D', 'E'];
+      // 2. Gera Assentos
+      const rows = Array.from({ length: rowsCount }, (_, i) => String.fromCharCode(65 + i));
       const seatsToCreate = [];
 
       for (const row of rows) {
-        for (let number = 1; number <= 5; number++) {
+        for (let number = 1; number <= seatsPerRow; number++) {
           seatsToCreate.push({
             sessionId: session.id,
             row: row,

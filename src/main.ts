@@ -2,9 +2,12 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
+import { JsonLogger } from './common/logger/json-logger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: new JsonLogger(),
+  });
   
   // Validação global dos DTOs
   app.useGlobalPipes(new ValidationPipe({
@@ -24,6 +27,6 @@ async function bootstrap() {
     .createDocument(app, config);
 
   SwaggerModule.setup('api-docs', app, documentFactory());
-  await app.listen(3000);
+  await app.listen(parseInt(process.env.PORT || '3000'));
 }
 bootstrap();

@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, HttpCode } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Headers, HttpCode } from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
 import { CreateReservationDto, UpdateReservationDto } from './dto/reservations.dtos';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiHeader, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Reservations (Reservas)')
 @Controller('reservations')
@@ -20,10 +20,18 @@ export class ReservationsController {
 
   @Post()
   @ApiOperation({ summary: 'Cria uma reserva temporária de assento' })
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    required: false,
+    description: 'Chave de idempotência para retries (mesma chave = mesma resposta).',
+  })
   @ApiResponse({ status: 201, description: 'Reserva criada.' })
   @ApiResponse({ status: 409, description: 'Assento já ocupado (Race Condition).' })
-  async create(@Body() createReservationDto: CreateReservationDto) {
-    return await this.reservationsService.create(createReservationDto);
+  async create(
+    @Body() createReservationDto: CreateReservationDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return await this.reservationsService.create(createReservationDto, idempotencyKey);
   }
 
   @Get('history/:userId')

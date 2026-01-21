@@ -32,4 +32,16 @@ export class NotificationsService {
   public async handleReservationExpired(msg: any) {
     this.logger.warn(`📉 [ANALYTICS] O usuário perdeu a reserva ${msg.reservationId}. Motivo: ${msg.reason}`);
   }
+
+  // 3. Evento explícito de assento liberado
+  @RabbitSubscribe({
+    exchange: 'cinema_events',
+    routingKey: 'seat.released',
+    queue: 'seat_released_queue',
+  })
+  public async handleSeatReleased(msg: any) {
+    this.logger.log(
+      `🔓 [SEAT] Assento liberado ${msg.seatId} (reserva: ${msg.reservationId})`,
+    );
+  }
 }

@@ -13,12 +13,71 @@ export class ReservationsService {
     private readonly amqpConnection: AmqpConnection,
   ) {}
 
-  async create(dto: CreateReservationDto) {
+  private async sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private normalizeIdempotencyKey(value?: string) {
+    if (!value) return undefined;
+
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+
+    // Evita chaves gigantes (proteção básica)
+    return trimmed.slice(0, 128);
+  }
+
+  async create(dto: CreateReservationDto, idempotencyKey?: string) {
     const { seatIds, userId } = dto;
 
-    // 1. ORDENAÇÃO PARA EVITAR DEADLOCK (Critical Path)
-    // Se User A pede [1, 2] e User B pede [2, 1], ambos tentarão lockar 1 primeiro.
-    const sortedSeatIds = [...seatIds].sort(); 
+    const normalizedIdemKey = this.normalizeIdempotencyKey(idempotencyKey);
+    const idemCacheKey = normalizedIdemKey
+      ? `idem:reservation:${userId}:${normalizedIdemKey}`
+      : undefined;
+
+    // Idempotência: se já existe uma resposta para essa chave, retorna igual.
+    if (idemCacheKey) {
+      const existing = await this.redis.get(idemCacheKey);
+      if (existing) {
+        const parsed = JSON.parse(existing);
+        if (parsed?.status === 'processing') {
+          // Espera curto período para a requisição original completar
+          for (let i = 0; i < 15; i++) {
+            // Aguarda 100ms
+            await this.sleep(100);
+            const retry = await this.redis.get(idemCacheKey);
+            if (retry) {
+              const retryParsed = JSON.parse(retry);
+              if (retryParsed?.status !== 'processing') return retryParsed;
+            }
+          }
+          throw new ConflictException('Requisição idempotente em processamento. Tente novamente.');
+        }
+
+        return parsed;
+      }
+
+      // Marca como "processing" com TTL; apenas 1 instância deve executar o fluxo.
+      const claimed = await this.redis.set(
+        idemCacheKey,
+        JSON.stringify({ status: 'processing' }),
+        'PX',
+        60_000,
+        'NX',
+      );
+
+      if (!claimed) {
+        // Alguém acabou de criar; tenta ler de novo
+        const retry = await this.redis.get(idemCacheKey);
+        if (retry) return JSON.parse(retry);
+        throw new ConflictException('Requisição idempotente em processamento.');
+      }
+    }
+
+    try {
+      // 1. ORDENAÇÃO PARA EVITAR DEADLOCK (Critical Path)
+      // Se User A pede [1, 2] e User B pede [2, 1], ambos tentarão lockar 1 primeiro.
+      const sortedSeatIds = [...seatIds].sort(); 
 
     // 2. Validação no Banco (Existe? Está Disponível?)
     // Buscamos todos de uma vez
@@ -94,7 +153,7 @@ export class ReservationsService {
       this.amqpConnection.publish('cinema_events', 'reservation.created', { ...res }); 
     });
 
-    return {
+    const response = {
       message: 'Reservas realizadas com sucesso!',
       // Retorna lista de IDs
       reservationIds: reservations.map(r => r.id), 
@@ -102,13 +161,25 @@ export class ReservationsService {
       expiresAt: expiresAt.toISOString(), 
       expiresInSeconds: 30,
     };
+
+    if (idemCacheKey) {
+      await this.redis.set(idemCacheKey, JSON.stringify(response), 'PX', 60_000);
+    }
+
+      return response;
+    } catch (error) {
+      if (idemCacheKey) {
+        await this.redis.del(idemCacheKey);
+      }
+      throw error;
+    }
   }
 
   async confirmPayment(reservationId: string) {
     // 1. Busca a reserva
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
-      include: { seat: true },
+      include: { seat: { include: { session: true } } },
     });
 
     if (!reservation) {
@@ -151,11 +222,12 @@ export class ReservationsService {
 
     // 4. Publica Evento no RabbitMQ (Fire and Forget)
     // Routing Key: "payment.confirmed"
+    const sessionPrice = reservation.seat.session.price;
     this.amqpConnection.publish('cinema_events', 'payment.confirmed', {
       reservationId: result.id,
       userId: result.userId,
       seatId: reservation.seatId,
-      amount: 25.50, // Num cenário real, viria da sessão
+      amount: sessionPrice.toString(),
       timestamp: new Date().toISOString(),
     });
     

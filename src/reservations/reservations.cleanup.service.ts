@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
+import Redis from 'ioredis';
 
 @Injectable()
 export class ReservationsCleanupService {
@@ -9,7 +10,8 @@ export class ReservationsCleanupService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly amqpConnection: AmqpConnection
+    private readonly amqpConnection: AmqpConnection,
+    @Inject('REDIS_CLIENT') private readonly redis: Redis,
   ) {}
 
   // Roda a cada 5 segundos
@@ -46,6 +48,16 @@ export class ReservationsCleanupService {
         reservationId: reservation.id,
         seatId: reservation.seatId,
         reason: 'TIMEOUT',
+        timestamp: new Date().toISOString(),
+      });
+
+      // 4. Remove lock e publica evento explícito de assento liberado
+      await this.redis.del(`lock:seat:${reservation.seatId}`);
+
+      this.amqpConnection.publish('cinema_events', 'seat.released', {
+        seatId: reservation.seatId,
+        reservationId: reservation.id,
+        reason: 'RESERVATION_EXPIRED',
         timestamp: new Date().toISOString(),
       });
       
