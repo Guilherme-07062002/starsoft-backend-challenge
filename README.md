@@ -157,6 +157,5 @@ curl -X POST http://localhost:3000/reservations/<reservation-id>/pay
 ## 🛣️ Melhorias Futuras
 
 - **Padrão Outbox:** Implementar o padrão Outbox para garantir a publicação atômica de eventos, eliminando a chance de perdê-los.
-- **Retry com Backoff Exponencial:** Adicionar uma política de retry com backoff nos consumidores de eventos do RabbitMQ para lidar com falhas temporárias de forma mais inteligente antes de enviar uma mensagem para a DLQ.
 - **Testes de Concorrência:** Desenvolver um conjunto de testes de integração mais robusto para simular alta concorrência (com ferramentas como k6 ou Artillery) e validar a eficácia do sistema de locking sob estresse.
 - **Autenticação:** Integrar um sistema de autenticação e autorização completo (ex: JWT).
