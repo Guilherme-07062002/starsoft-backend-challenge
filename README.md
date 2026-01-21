@@ -76,87 +76,87 @@ yarn test --runInBand
 
 ### 1) Race Conditions (double-booking)
 
-- Ao reservar assentos, a API tenta adquirir um lock distribuído no Redis por assento:
+- Ao reservar assentos, a API tenta adquirir um lock distribuído no Redis para cada assento.
     - Chave: `lock:seat:{seatId}`
-    - Comando: `SET key value NX PX 30000`
-- Se qualquer lock falhar, a operação é abortada e os locks já adquiridos são liberados.
+    - Comando: `SET key value NX PX 30000` (operação atômica)
+- A flag `NX` garante que a chave só seja criada se não existir, prevenindo que duas requisições obtenham o lock para o mesmo assento simultaneamente.
+- Se qualquer lock falhar durante a reserva de múltiplos assentos, a operação é abortada e os locks já adquiridos são liberados (rollback), garantindo consistência.
 
 ### 2) Coordenação entre múltiplas instâncias
 
-- A coordenação é feita via Redis (lock distribuído), funcionando mesmo com múltiplas réplicas da API.
+- A coordenação é feita inteiramente via Redis. Como o Redis é um serviço centralizado, o mecanismo de lock distribuído funciona de forma consistente mesmo com múltiplas réplicas da API rodando em paralelo.
 
 ### 3) Prevenção de Deadlocks
 
-- Ao reservar múltiplos assentos, os IDs são **ordenados** antes de tentar adquirir locks.
-- Isso evita o cenário clássico: Usuário A tenta [1,3] e Usuário B tenta [3,1].
+- Ao reservar múltiplos assentos (ex: `[seat-3, seat-1]`), os IDs são **ordenados** (`[seat-1, seat-3]`) antes de o sistema tentar adquirir os locks.
+- Isso garante que todas as transações tentem adquirir locks na mesma ordem, evitando o cenário clássico de deadlock onde a Transação A trava o recurso 1 e espera pelo 2, enquanto a Transação B trava o 2 e espera pelo 1.
 
 ### 4) Idempotência (retries do cliente)
 
-- O endpoint `POST /reservations` aceita header opcional `Idempotency-Key`.
-- Com a mesma chave e mesmo usuário, a API retorna a **mesma resposta** (cache no Redis) sem duplicar reservas.
+- O endpoint `POST /reservations` aceita o header opcional `Idempotency-Key`.
+- Se uma requisição com a mesma chave é recebida de um mesmo usuário, a API retorna a **mesma resposta** que foi gerada na primeira vez (armazenada em cache no Redis), sem processar a reserva novamente. Isso previne a criação de reservas duplicadas em caso de timeouts de rede ou retries do cliente.
 
 ### 5) Expiração e Liberação de Assentos
 
-- Locks expiram automaticamente via TTL de 30s.
-- Um job (Nest Schedule) roda a cada 5s e marca reservas PENDING vencidas como CANCELLED.
-- Eventos publicados no RabbitMQ:
-    - `reservation.created`
-    - `payment.confirmed`
-    - `reservation.expired`
-    - `seat.released`
+- Os locks no Redis expiram automaticamente (TTL de 30s), prevenindo que um assento fique travado indefinidamente se a aplicação falhar.
+- Um job agendado (`@Cron`) roda a cada 5 segundos para limpar o sistema:
+    - Ele busca por reservas no estado `PENDING` que já expiraram.
+    - Atualiza o status dessas reservas para `CANCELLED` no banco de dados.
+    - Publica eventos (`reservation.expired`) para que outros serviços possam reagir, como liberar o assento.
 
 ## 📚 Endpoints da API (com exemplos)
 
+A documentação completa e interativa está disponível via Swagger em `http://localhost:3000/api-docs`.
+
 ### Sessões
 
-- `POST /sessions` cria sessão e gera assentos automaticamente
-- `GET /sessions` lista sessões
-- `GET /sessions/:id` retorna sessão com disponibilidade em “tempo real” (considerando locks no Redis)
+- `POST /sessions`: Cria uma nova sessão e gera seus assentos automaticamente.
+- `GET /sessions`: Lista todas as sessões.
+- `GET /sessions/:id`: Retorna os detalhes de uma sessão, incluindo a disponibilidade de assentos em tempo real.
 
 ### Reservas
 
-- `POST /reservations` cria reserva(s) temporária(s)
+- `POST /reservations`: Cria uma ou mais reservas temporárias (válidas por 30 segundos).
 
 ```bash
 curl -X POST http://localhost:3000/reservations \
     -H "Content-Type: application/json" \
-    -H "Idempotency-Key: abc-123" \
-    -d '{ "userId": "user-1", "seatIds": ["<seat-id>"] }'
+    -H "Idempotency-Key: <chave-unica-por-tentativa>" \
+    -d '{ "userId": "user-123", "seatIds": ["<seat-id-1>", "<seat-id-2>"] }'
 ```
 
-- `POST /reservations/:id/pay` confirma pagamento
+- `POST /reservations/:id/pay`: Converte uma reserva `PENDING` em uma venda definitiva.
 
 ```bash
 curl -X POST http://localhost:3000/reservations/<reservation-id>/pay
 ```
 
-- `GET /reservations/:id` detalhes da reserva
-- `GET /reservations/user/:userId` reservas de um usuário
+- `GET /reservations/:id`: Obtém os detalhes de uma reserva específica.
+- `GET /reservations/user/:userId`: Lista todas as reservas de um usuário.
 
 ### Vendas
 
-- `GET /sales/history/:userId` histórico de compras de um usuário
+- `GET /sales/history/:userId`: Retorna o histórico de compras confirmadas de um usuário.
 
 ## 🧾 Logging
 
-- Logging em JSON com níveis `DEBUG`, `INFO`, `WARN`, `ERROR`.
-- Ajuste o nível com `LOG_LEVEL` (ex.: `debug`, `info`, `warn`, `error`).
+- A aplicação utiliza logging estruturado em JSON (via Pino) com níveis `DEBUG`, `INFO`, `WARN`, `ERROR`.
+- O nível de log pode ser ajustado através da variável de ambiente `LOG_LEVEL` no `docker-compose.yaml`.
 
 ## 🧩 Decisões Técnicas
 
-- **Lock no Redis** em vez de lock pessimista no banco: reduz contenção de conexões e melhora latência.
-- **Eventos via RabbitMQ**: desacopla consumidores (ex.: email/analytics) do request/response.
-- **Status no Postgres**: assento vendido é persistido como SOLD e não volta a AVAILABLE.
+- **Lock Distribuído no Redis vs. Lock Pessimista no Banco:** A escolha pelo Redis reduz a contenção no banco de dados e oferece menor latência para operações de lock, sendo mais escalável para cenários de alta concorrência.
+- **Eventos via RabbitMQ:** A publicação de eventos desacopla os componentes do sistema. Por exemplo, a confirmação de um pagamento (`payment.confirmed`) pode ser consumida por serviços de notificação, analytics ou faturamento sem que o serviço de reservas precise conhecê-los.
+- **Fonte da Verdade (Source of Truth):** O banco de dados PostgreSQL é a fonte final da verdade para o estado de um assento (`AVAILABLE`, `SOLD`). O Redis é usado para o estado transitório (`LOCKED`).
 
 ## ⚠️ Limitações Conhecidas
 
-- Não há autenticação real (userId é informado no payload).
-- “Venda” não é uma tabela separada (é representada por `ReservationStatus.CONFIRMED`).
-- Não há Outbox/Inbox (garantia forte de entrega/exatamente-uma-vez); foi mantido simples para o desafio.
+- **Autenticação/Autorização:** Não há um sistema de autenticação real. O `userId` é simplesmente informado no payload da requisição, o que não seria seguro em um ambiente de produção.
+- **Garantia de Entrega de Eventos:** A implementação atual não utiliza padrões como Outbox/Inbox. Isso significa que, em um caso raro onde o banco de dados commita a transação mas a aplicação falha antes de publicar o evento no RabbitMQ, o evento pode ser perdido.
 
 ## 🛣️ Melhorias Futuras
 
-- Model `Sale` separado e trilha completa de pagamentos.
-- Outbox pattern para publicação confiável de eventos.
-- DLQ + retries com backoff para consumidores.
-- Testes de integração/concorrência mais robustos (k6/Artillery).
+- **Padrão Outbox:** Implementar o padrão Outbox para garantir a publicação atômica de eventos, eliminando a chance de perdê-los.
+- **Retry com Backoff Exponencial:** Adicionar uma política de retry com backoff nos consumidores de eventos do RabbitMQ para lidar com falhas temporárias de forma mais inteligente antes de enviar uma mensagem para a DLQ.
+- **Testes de Concorrência:** Desenvolver um conjunto de testes de integração mais robusto para simular alta concorrência (com ferramentas como k6 ou Artillery) e validar a eficácia do sistema de locking sob estresse.
+- **Autenticação:** Integrar um sistema de autenticação e autorização completo (ex: JWT).
