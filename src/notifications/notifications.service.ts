@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { PinoLogger } from 'nestjs-pino';
-import { exponentialRetryErrorHandler } from '../rabbitmq/rabbitmq.retry';
+import { createExponentialRetryErrorHandler } from '../rabbitmq/rabbitmq.retry';
 
 /**
  * Serviço responsável por escutar eventos do RabbitMQ relacionados a notificações.
@@ -24,7 +24,7 @@ export class NotificationsService {
     routingKey: 'reservation.created',
     queue: 'reservation_created_queue',
     queueOptions: { durable: true },
-    errorHandler: exponentialRetryErrorHandler,
+    errorHandler: createExponentialRetryErrorHandler(),
   })
   public async handleReservationCreated(msg: {
     id: string;
@@ -49,7 +49,7 @@ export class NotificationsService {
     routingKey: 'payment.confirmed',
     queue: 'email_notification_queue',
     queueOptions: { durable: true },
-    errorHandler: exponentialRetryErrorHandler,
+    errorHandler: createExponentialRetryErrorHandler(),
   })
   public async handlePaymentConfirmed(msg: {
     userId: string;
@@ -80,7 +80,7 @@ export class NotificationsService {
     routingKey: 'reservation.expired',
     queue: 'analytics_queue',
     queueOptions: { durable: true },
-    errorHandler: exponentialRetryErrorHandler,
+    errorHandler: createExponentialRetryErrorHandler(),
   })
   public async handleReservationExpired(msg: {
     reservationId: string;
@@ -101,7 +101,7 @@ export class NotificationsService {
     routingKey: 'seat.released',
     queue: 'seat_released_queue',
     queueOptions: { durable: true },
-    errorHandler: exponentialRetryErrorHandler,
+    errorHandler: createExponentialRetryErrorHandler(),
   })
   public async handleSeatReleased(msg: {
     seatId: string;
