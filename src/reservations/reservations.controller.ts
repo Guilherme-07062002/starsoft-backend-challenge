@@ -29,7 +29,7 @@ export class ReservationsController {
   @ApiResponse({ status: 409, description: 'Assento já ocupado (Race Condition).' })
   async create(
     @Body() createReservationDto: CreateReservationDto,
-    @Headers('idempotency-key') idempotencyKey?: string,
+    @Headers('Idempotency-Key') idempotencyKey?: string,
   ) {
     return await this.reservationsService.create(createReservationDto, idempotencyKey);
   }

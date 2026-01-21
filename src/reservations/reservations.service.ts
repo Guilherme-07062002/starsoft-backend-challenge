@@ -62,7 +62,7 @@ export class ReservationsService {
         idemCacheKey,
         JSON.stringify({ status: 'processing' }),
         'PX',
-        60_000,
+        60000, // 1 minuto
         'NX',
       );
 
@@ -163,7 +163,7 @@ export class ReservationsService {
     };
 
     if (idemCacheKey) {
-      await this.redis.set(idemCacheKey, JSON.stringify(response), 'PX', 60_000);
+      await this.redis.set(idemCacheKey, JSON.stringify(response), 'PX', 60000);
     }
 
       return response;

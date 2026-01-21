@@ -30,7 +30,7 @@ async function main() {
   const sessionRes = await http('POST', '/sessions', {
     movieId: 'movie-x',
     room: 'Sala 1',
-    startsAt: new Date(Date.now() + 60_000).toISOString(),
+    startsAt: new Date(Date.now() + 60000).toISOString(),
     price: 25.0,
     rowsCount: 4,
     seatsPerRow: 4,
