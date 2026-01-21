@@ -12,6 +12,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { seconds, ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
+import { LoggerModule } from 'nestjs-pino';
 
 @Module({
   imports: [
@@ -32,6 +33,22 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 
     // Infra
     ScheduleModule.forRoot(), // O forRoot inicializa o módulo de agendamento
+    LoggerModule.forRoot({
+      pinoHttp: {
+        autoLogging: false, // Opcional: Evita logar cada requisição HTTP automaticamente se achar muito verboso
+        redact: ['req.headers.authorization'], // Segurança: Esconde tokens
+        
+        // Formatação customizada (Opcional)
+        serializers: {
+          req: (req) => ({
+            id: req.id,
+            method: req.method,
+            url: req.url,
+            // user: req.raw.user?.id // Se quiser logar o ID do usuário logado
+          }),
+        },
+      },
+    }),
     PrismaModule,
     RedisModule,
     MessagingModule,
