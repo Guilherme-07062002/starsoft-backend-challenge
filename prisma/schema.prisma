@@ -65,4 +65,29 @@ model Reservation {
   updatedAt DateTime @updatedAt
 
   @@map("reservations")
+
+  // Adicione apenas esta linha para o Prisma saber da relação
+  sale      Sale?
+}
+
+enum PaymentMethod {
+  CREDIT_CARD
+  DEBIT_CARD
+  PIX
+  CASH
+}
+
+model Sale {
+  id            String        @id @default(uuid())
+  reservationId String        @unique
+  amount        Decimal       @db.Decimal(10, 2)
+  
+  // Fica mais robusto que string
+  paymentMethod PaymentMethod @default(CREDIT_CARD) 
+  
+  createdAt     DateTime      @default(now())
+  
+  reservation   Reservation   @relation(fields: [reservationId], references: [id])
+
+  @@map("sales")
 }

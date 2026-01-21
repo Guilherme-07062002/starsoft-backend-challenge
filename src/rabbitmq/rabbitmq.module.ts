@@ -8,7 +8,7 @@ import { RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
       exchanges: [
         {
           name: 'cinema_events', // Nome da Exchange
-          type: 'topic',         // Tipo Topic permite roteamento flexível
+          type: 'topic', // Tipo Topic permite roteamento flexível
         },
       ],
       uri: process.env.RABBITMQ_URI || 'amqp://user:pass@rabbitmq:5672',

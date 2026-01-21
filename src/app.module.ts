@@ -9,8 +9,11 @@ import { RedisModule } from './redis/redis.module';
 import { MessagingModule } from './rabbitmq/rabbitmq.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { NotificationsModule } from './notifications/notifications.module';
-import { seconds, ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { seconds, ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
+import { LoggerModule } from 'nestjs-pino';
+import { SalesModule } from './sales/sales.module';
 
 @Module({
   imports: [
@@ -19,7 +22,7 @@ import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
       throttlers: [
         {
           ttl: seconds(60), // 60 segundos
-          limit: 10,  // 10 requisições
+          limit: 10, // 10 requisições
         },
       ],
       storage: new ThrottlerStorageRedisService({
@@ -31,6 +34,23 @@ import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
 
     // Infra
     ScheduleModule.forRoot(), // O forRoot inicializa o módulo de agendamento
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: (process.env.LOG_LEVEL || 'info').toLowerCase(),
+        autoLogging: false, // Opcional: Evita logar cada requisição HTTP automaticamente se achar muito verboso
+        redact: ['req.headers.authorization'], // Segurança: Esconde tokens
+
+        // Formatação customizada (Opcional)
+        serializers: {
+          req: (req) => ({
+            id: req.id,
+            method: req.method,
+            url: req.url,
+            // user: req.raw.user?.id // Se quiser logar o ID do usuário logado
+          }),
+        },
+      },
+    }),
     PrismaModule,
     RedisModule,
     MessagingModule,
@@ -38,14 +58,15 @@ import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
     // Features
     SessionsModule,
     ReservationsModule,
-    NotificationsModule
+    NotificationsModule,
+    SalesModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: AppThrottlerGuard, // Usa o guard customizado
     },
   ],
 })
