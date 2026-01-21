@@ -1,6 +1,9 @@
 import { Global, Module } from '@nestjs/common';
 import Redis from 'ioredis';
 
+/**
+ * Módulo global para fornecer o cliente Redis em toda a aplicação.
+ */
 @Global()
 @Module({
   providers: [

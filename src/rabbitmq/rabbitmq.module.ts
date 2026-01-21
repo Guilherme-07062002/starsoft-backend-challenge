@@ -2,21 +2,24 @@ import { Global, Module } from '@nestjs/common';
 import { RabbitMQModule } from '@golevelup/nestjs-rabbitmq';
 import { DlqConsumer } from './rabbitmq.dlq.consumer';
 
+/**
+ * Módulo de mensageria que configura o RabbitMQ com exchanges, filas e consumidores.
+ */
 @Global()
 @Module({
   imports: [
     RabbitMQModule.forRoot({
       exchanges: [
         {
-          name: 'cinema_events', // Nome da Exchange
+          name: 'cinema_events', // Exchange principal de eventos do sistema
           type: 'topic', // Tipo Topic permite roteamento flexível
         },
         {
-          name: 'cinema_retry',
+          name: 'cinema_retry', // Exchange para mensagens de retry
           type: 'topic',
         },
         {
-          name: 'cinema_dlq',
+          name: 'cinema_dlq', // Exchange para Dead Letter Queue
           type: 'topic',
         },
       ],
@@ -47,6 +50,6 @@ import { DlqConsumer } from './rabbitmq.dlq.consumer';
     }),
   ],
   providers: [DlqConsumer],
-  exports: [RabbitMQModule], // Exporta para usarmos nos Services
+  exports: [RabbitMQModule], // Exporta o módulo RabbitMQ para uso em outros módulos
 })
-export class MessagingModule {} // Chamei de MessagingModule pra ficar genérico
+export class MessagingModule {}

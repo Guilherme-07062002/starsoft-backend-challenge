@@ -3,13 +3,22 @@ import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { PinoLogger } from 'nestjs-pino';
 import { exponentialRetryErrorHandler } from '../rabbitmq/rabbitmq.retry';
 
+/**
+ * Serviço responsável por escutar eventos do RabbitMQ relacionados a notificações.
+ * Ele consome eventos como criação de reservas, confirmações de pagamento,
+ * expiração de reservas e liberação de assentos, realizando ações como
+ * logging e simulação de envio de emails.
+ */
 @Injectable()
 export class NotificationsService {
   constructor(private readonly logger: PinoLogger) {
     this.logger.setContext(NotificationsService.name);
   }
 
-  // 0. Escuta o evento de RESERVA CRIADA
+  /**
+   * Escuta o evento de CRIAÇÃO DE RESERVA
+   * @param msg - Mensagem recebida do RabbitMQ contendo detalhes da reserva criada.
+   */
   @RabbitSubscribe({
     exchange: 'cinema_events',
     routingKey: 'reservation.created',
@@ -19,18 +28,21 @@ export class NotificationsService {
   })
   public async handleReservationCreated(msg: any) {
     // Exemplo de consumidor: auditoria/analytics/observabilidade.
-    // Se lançar exceção, o RabbitMQ pode redeliver conforme a configuração do broker.
+    // Se lançar exceção, o RabbitMQ pode reenfileirar a mensagem (dependendo da configuração).
     this.logger.info(
       `[RESERVATION] Criada reserva ${msg?.id ?? msg?.reservationId ?? '(sem id)'} ` +
         `para user=${msg?.userId ?? '(sem user)'} seat=${msg?.seatId ?? '(sem seat)'}`,
     );
   }
 
-  // 1. Escuta o evento de PAGAMENTO CONFIRMADO
+  /**
+   * Escuta o evento de CONFIRMAÇÃO DE PAGAMENTO
+   * @param msg - Mensagem recebida do RabbitMQ contendo detalhes do pagamento confirmado.
+   */
   @RabbitSubscribe({
-    exchange: 'cinema_events', // A mesma exchange que definimos no module
-    routingKey: 'payment.confirmed', // A chave que usamos no publish
-    queue: 'email_notification_queue', // Nome da fila (se cair o app, as msg ficam aqui)
+    exchange: 'cinema_events',
+    routingKey: 'payment.confirmed',
+    queue: 'email_notification_queue',
     queueOptions: { durable: true },
     errorHandler: exponentialRetryErrorHandler,
   })
@@ -50,11 +62,14 @@ export class NotificationsService {
     // Se der erro aqui, cai no retry com backoff (cinema_retry_queue) e depois DLQ.
   }
 
-  // 2. (Bônus) Escuta o evento de RESERVA EXPIRADA (que seu Cron Job dispara)
+  /**
+   * Escuta o evento de EXPIRAÇÃO DE RESERVA
+   * @param msg - Mensagem recebida do RabbitMQ contendo detalhes da reserva expirada.
+   */
   @RabbitSubscribe({
     exchange: 'cinema_events',
     routingKey: 'reservation.expired',
-    queue: 'analytics_queue', // Fila diferente, consumidor diferente
+    queue: 'analytics_queue',
     queueOptions: { durable: true },
     errorHandler: exponentialRetryErrorHandler,
   })
@@ -64,7 +79,10 @@ export class NotificationsService {
     );
   }
 
-  // 3. Evento explícito de assento liberado
+  /**
+   * Escuta o evento de LIBERAÇÃO DE ASSENTO
+   * @param msg - Mensagem recebida do RabbitMQ contendo detalhes do assento liberado.
+   */
   @RabbitSubscribe({
     exchange: 'cinema_events',
     routingKey: 'seat.released',
