@@ -22,6 +22,15 @@ export class SessionsService {
    * @returns A sessão criada
    */
   async create(data: CreateSessionDto) {
+    // Validar data de início da sessão
+    const startsAtDate = new Date(data.startsAt);
+    const now = new Date();
+    if (startsAtDate < now) {
+      throw new BadRequestException(
+        'A data e hora de início da sessão não podem estar no passado.',
+      );
+    }
+
     const rowsCount = data.rowsCount ?? 5; // Padrão 5 fileiras
     const seatsPerRow = data.seatsPerRow ?? 5; // Padrão 5 assentos por fileira
 
