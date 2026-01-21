@@ -1,12 +1,18 @@
+import Redis from 'ioredis';
 import { Inject, Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
-import Redis from 'ioredis';
 import { PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
 import { ReservationStatus } from '@prisma/client';
 
+/**
+ * Serviço responsável por limpar reservas expiradas periodicamente.
+ * Ele verifica reservas no status PENDING que já passaram do tempo de expiração,
+ * cancela essas reservas, libera os assentos correspondentes e publica eventos
+ * relevantes no RabbitMQ.
+ */
 @Injectable()
 export class ReservationsCleanupService {
   constructor(
@@ -18,6 +24,11 @@ export class ReservationsCleanupService {
     this.logger.setContext(ReservationsCleanupService.name);
   }
 
+  /**
+   * Libera o lock distribuído no Redis
+   * @param lockKey Chave do lock no Redis
+   * @param token Token que identifica o lock adquirido
+   */
   private async releaseLock(lockKey: string, token: string) {
     // Libera apenas se o token for o mesmo (evita soltar lock de outra instância)
     const script =
@@ -26,7 +37,9 @@ export class ReservationsCleanupService {
     await this.redis.eval(script, 1, lockKey, token);
   }
 
-  // Roda a cada 5 segundos
+  /**
+   * Tarefa cron que roda a cada 5 segundos para limpar reservas expiradas.
+   */
   @Cron(CronExpression.EVERY_5_SECONDS)
   async handleCron() {
     // Evita múltiplas instâncias processarem a mesma expiração ao mesmo tempo
@@ -34,9 +47,8 @@ export class ReservationsCleanupService {
     const token = randomUUID();
     const acquired = await this.redis.set(lockKey, token, 'PX', 4500, 'NX');
 
-    if (!acquired) {
-      return;
-    }
+    // Se não conseguiu o lock, outra instância está processando
+    if (!acquired) return;
 
     const now = new Date();
 
@@ -44,7 +56,7 @@ export class ReservationsCleanupService {
     try {
       const expiredReservations = await this.prisma.reservation.findMany({
         where: {
-          status: 'PENDING',
+          status: ReservationStatus.PENDING,
           expiresAt: {
             lt: now, // "Less Than" (Menor que) agora
           },

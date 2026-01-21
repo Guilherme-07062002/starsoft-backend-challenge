@@ -66,7 +66,7 @@ import { SalesModule } from './sales/sales.module';
     AppService,
     {
       provide: APP_GUARD,
-      useClass: AppThrottlerGuard, // Usa o guard customizado
+      useClass: AppThrottlerGuard, // Usa o guard customizado para Rate Limiting
     },
   ],
 })

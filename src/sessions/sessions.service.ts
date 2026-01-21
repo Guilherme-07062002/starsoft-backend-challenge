@@ -16,10 +16,16 @@ export class SessionsService {
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
   ) {}
 
+  /**
+   * Cria uma nova sessão de cinema com assentos pré-gerados.
+   * @param data Dados para criação da sessão
+   * @returns A sessão criada
+   */
   async create(data: CreateSessionDto) {
-    const rowsCount = data.rowsCount ?? 5;
-    const seatsPerRow = data.seatsPerRow ?? 5;
+    const rowsCount = data.rowsCount ?? 5; // Padrão 5 fileiras
+    const seatsPerRow = data.seatsPerRow ?? 5; // Padrão 5 assentos por fileira
 
+    // Validações básicas
     if (rowsCount > 26) {
       throw new BadRequestException(
         'A quantidade máxima de fileiras é 26 (A-Z).',
@@ -62,7 +68,7 @@ export class SessionsService {
         }
       }
 
-      // 3. Insert em massa (Performance extrema)
+      // 3. Insert em massa para criar os assentos da sessão
       await tx.seat.createMany({
         data: seatsToCreate,
       });
@@ -71,13 +77,21 @@ export class SessionsService {
     });
   }
 
+  /**
+   * Lista todas as sessões de cinema com seus respectivos assentos.
+   * @returns Lista de sessões com assentos
+   */
   async findAll() {
     return this.prisma.session.findMany({
       include: { seats: { orderBy: { number: 'asc' } } },
     });
   }
 
-  // 👇 O NOVO MÉTODO DE TEMPO REAL
+  /**
+   * Obtém os detalhes de uma sessão específica, incluindo assentos disponíveis em tempo real.
+   * @param id ID da sessão
+   * @returns Detalhes da sessão com status de assentos em tempo real
+   */
   async findOne(id: string) {
     // 1. Busca Sessão e Assentos no Banco (Fonte de Verdade Persistente)
     const session = await this.prisma.session.findUnique({
@@ -86,7 +100,6 @@ export class SessionsService {
         seats: { orderBy: { row: 'asc' } },
       },
     });
-
     if (!session) throw new NotFoundException('Sessão não encontrada');
 
     // 2. Separa apenas os assentos que o banco diz estarem "LIVRES"

@@ -1,4 +1,3 @@
-import { PartialType } from '@nestjs/mapped-types';
 import { ApiProperty } from '@nestjs/swagger';
 import {
   ArrayMinSize,
@@ -36,5 +35,3 @@ export class CreateReservationDto {
   @IsString({ message: 'O ID do usuário deve ser uma string' })
   userId: string;
 }
-
-export class UpdateReservationDto extends PartialType(CreateReservationDto) {}

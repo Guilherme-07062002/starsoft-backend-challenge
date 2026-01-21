@@ -19,10 +19,20 @@ export class ReservationsService {
     private readonly amqpConnection: AmqpConnection,
   ) {}
 
+  /**
+   * Pausa a execução por um determinado número de milissegundos.
+   * @param ms Número de milissegundos para pausar.
+   * @returns Uma Promise que resolve após o tempo especificado.
+   */
   private async sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /**
+   * Normaliza a chave de idempotência removendo espaços e limitando o tamanho.
+   * @param value Chave de idempotência fornecida.
+   * @returns Chave normalizada ou undefined se inválida.
+   */
   private normalizeIdempotencyKey(value?: string) {
     if (!value) return undefined;
 
@@ -33,9 +43,16 @@ export class ReservationsService {
     return trimmed.slice(0, 128);
   }
 
+  /**
+   * Cria uma nova reserva de assento.
+   * @param dto Dados para criação da reserva.
+   * @param idempotencyKey Chave de idempotência opcional para evitar duplicação.
+   * @returns Detalhes da reserva criada.
+   */
   async create(dto: CreateReservationDto, idempotencyKey?: string) {
     const { seatIds, userId } = dto;
 
+    // Normaliza a chave de idempotência
     const normalizedIdemKey = this.normalizeIdempotencyKey(idempotencyKey);
     const idemCacheKey = normalizedIdemKey
       ? `idem:reservation:${userId}:${normalizedIdemKey}`
@@ -102,6 +119,7 @@ export class ReservationsService {
         );
       }
 
+      // Verifica se algum já está vendido ou reservado
       const soldSeats = seats.filter((s) => s.status !== SeatStatus.AVAILABLE);
       if (soldSeats.length > 0) {
         if (soldSeats.length === 1) {
@@ -131,7 +149,7 @@ export class ReservationsService {
           );
 
           if (!acquired) {
-            // Falhou no meio do caminho? Aborta tudo!
+            // Se falhou, faz rollback dos anteriores e aborta
             throw new ConflictException(
               `O assento ${seatId} acabou de ser reservado por outro usuário.`,
             );
@@ -146,15 +164,10 @@ export class ReservationsService {
         throw error;
       }
 
-      // 4. Se chegou aqui, todos os locks são nossos. Cria no Postgres.
-      // Precisamos de um ID de reserva único para o grupo ou reservas individuais?
-      // O requisito diz "Retornar ID da reserva". Geralmente é um "Order ID" ou cria várias reservas.
-      // Vamos criar várias reservas (uma por assento) mas retornar um Group ID seria ideal.
-      // Para simplificar e manter compatibilidade com seu schema atual, vamos criar N reservas.
-
+      // 4. Criação das Reservas no Banco
       const expiresAt = new Date(Date.now() + TTL);
 
-      // Usamos transaction para garantir que todas gravam
+      // Transação para criar todas as reservas garantindo atomicidade
       const reservations = await this.prisma.$transaction(
         sortedSeatIds.map((seatId) =>
           this.prisma.reservation.create({
@@ -168,9 +181,7 @@ export class ReservationsService {
         ),
       );
 
-      // 5. Publicar Evento (Resolvendo lacuna 3)
-      // Como são várias, podemos publicar um evento de "BatchReserved" ou loop.
-      // Vamos no simples: Loop
+      // 5. Publicar Evento de Reserva Criada para cada reserva
       reservations.forEach((res) => {
         this.amqpConnection.publish(
           'cinema_events',
@@ -182,10 +193,8 @@ export class ReservationsService {
 
       const response = {
         message: 'Reservas realizadas com sucesso!',
-        // Retorna lista de IDs
-        reservationIds: reservations.map((r) => r.id),
-        // Resolvendo lacuna 2.2: Retornar timestamp explícito
-        expiresAt: expiresAt.toISOString(),
+        reservationIds: reservations.map((r) => r.id), // Lista de IDs das reservas
+        expiresAt: expiresAt.toISOString(), // Retorna quando expira
         expiresInSeconds: 30,
       };
 
@@ -207,6 +216,10 @@ export class ReservationsService {
     }
   }
 
+  /**
+   * Confirma o pagamento de uma reserva existente.
+   * @param reservationId ID da reserva a ser confirmada.
+   */
   async confirmPayment(reservationId: string) {
     const now = new Date();
 
@@ -339,12 +352,22 @@ export class ReservationsService {
     };
   }
 
+  /**
+   * Lista todas as reservas de um usuário.
+   * @param userId ID do usuário cujas reservas serão listadas.
+   * @returns Lista de reservas do usuário.
+   */
   async findByUser(userId: string) {
     return await this.prisma.reservation.findMany({
       where: { userId },
     });
   }
 
+  /**
+   * Obtém os detalhes de uma reserva específica.
+   * @param id ID da reserva a ser obtida.
+   * @returns Detalhes da reserva.
+   */
   async findOne(id: string) {
     const reservation = await this.prisma.reservation.findUnique({
       where: { id },
@@ -365,6 +388,10 @@ export class ReservationsService {
     return reservation;
   }
 
+  /**
+   * Lista todas as reservas.
+   * @returns Lista de todas as reservas.
+   */
   async findAll() {
     return await this.prisma.reservation.findMany();
   }
