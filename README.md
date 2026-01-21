@@ -137,14 +137,6 @@ curl -X POST http://localhost:3000/reservations/<reservation-id>/pay
 - Logging em JSON com níveis `DEBUG`, `INFO`, `WARN`, `ERROR`.
 - Ajuste o nível com `LOG_LEVEL` (ex.: `debug`, `info`, `warn`, `error`).
 
-## ▶️ Exemplo de Fluxo para Testar (inclui concorrência)
-
-Existe um script que cria sessão e simula 2 usuários concorrendo pelo mesmo assento:
-
-```bash
-node scripts/simulate-race.js
-```
-
 ## 🧩 Decisões Técnicas
 
 - **Lock no Redis** em vez de lock pessimista no banco: reduz contenção de conexões e melhora latência.

@@ -5,6 +5,22 @@ import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
+  // 0. Escuta o evento de RESERVA CRIADA
+  @RabbitSubscribe({
+    exchange: 'cinema_events',
+    routingKey: 'reservation.created',
+    queue: 'reservation_created_queue',
+    queueOptions: { durable: true },
+  })
+  public async handleReservationCreated(msg: any) {
+    // Exemplo de consumidor: auditoria/analytics/observabilidade.
+    // Se lançar exceção, o RabbitMQ pode redeliver conforme a configuração do broker.
+    this.logger.log(
+      `[RESERVATION] Criada reserva ${msg?.id ?? msg?.reservationId ?? '(sem id)'} ` +
+        `para user=${msg?.userId ?? '(sem user)'} seat=${msg?.seatId ?? '(sem seat)'}`,
+    );
+  }
+
   // 1. Escuta o evento de PAGAMENTO CONFIRMADO
   @RabbitSubscribe({
     exchange: 'cinema_events',       // A mesma exchange que definimos no module
