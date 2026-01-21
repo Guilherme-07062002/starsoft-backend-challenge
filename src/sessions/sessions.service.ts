@@ -1,4 +1,9 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateSessionDto } from './dto/sessions.dtos';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SeatStatus } from '@prisma/client';
@@ -6,7 +11,7 @@ import Redis from 'ioredis';
 
 @Injectable()
 export class SessionsService {
-  constructor (
+  constructor(
     private readonly prisma: PrismaService,
     @Inject('REDIS_CLIENT') private readonly redis: Redis,
   ) {}
@@ -16,12 +21,16 @@ export class SessionsService {
     const seatsPerRow = data.seatsPerRow ?? 5;
 
     if (rowsCount > 26) {
-      throw new BadRequestException('A quantidade máxima de fileiras é 26 (A-Z).');
+      throw new BadRequestException(
+        'A quantidade máxima de fileiras é 26 (A-Z).',
+      );
     }
 
     const totalSeats = rowsCount * seatsPerRow;
     if (totalSeats < 16) {
-      throw new BadRequestException('Uma sessão deve ter no mínimo 16 assentos.');
+      throw new BadRequestException(
+        'Uma sessão deve ter no mínimo 16 assentos.',
+      );
     }
 
     // Usamos transaction para garantir: Ou cria SESSÃO + ASSENTOS, ou não cria nada.
@@ -37,7 +46,9 @@ export class SessionsService {
       });
 
       // 2. Gera Assentos
-      const rows = Array.from({ length: rowsCount }, (_, i) => String.fromCharCode(65 + i));
+      const rows = Array.from({ length: rowsCount }, (_, i) =>
+        String.fromCharCode(65 + i),
+      );
       const seatsToCreate = [];
 
       for (const row of rows) {
@@ -71,8 +82,8 @@ export class SessionsService {
     // 1. Busca Sessão e Assentos no Banco (Fonte de Verdade Persistente)
     const session = await this.prisma.session.findUnique({
       where: { id },
-      include: { 
-        seats: { orderBy: { row: 'asc' } } 
+      include: {
+        seats: { orderBy: { row: 'asc' } },
       },
     });
 
@@ -80,18 +91,20 @@ export class SessionsService {
 
     // 2. Separa apenas os assentos que o banco diz estarem "LIVRES"
     // (Não precisamos checar Redis para os que já são SOLD)
-    const availableSeats = session.seats.filter(s => s.status === SeatStatus.AVAILABLE);
+    const availableSeats = session.seats.filter(
+      (s) => s.status === SeatStatus.AVAILABLE,
+    );
 
     if (availableSeats.length > 0) {
       // 3. Otimização MGET: Busca todos os locks de uma vez só no Redis (O(1) request)
-      const keys = availableSeats.map(seat => `lock:seat:${seat.id}`);
-      
+      const keys = availableSeats.map((seat) => `lock:seat:${seat.id}`);
+
       // Retorna array de valores: [null, "userId-1", null, "userId-2"...]
       const locks = await this.redis.mget(keys);
 
       // 4. Cria um Set com os IDs que estão travados para busca rápida O(1)
       const lockedSeatIds = new Set<string>();
-      
+
       locks.forEach((lockValue, index) => {
         if (lockValue) {
           // Se tem valor, pega o ID do assento correspondente na lista original
@@ -100,9 +113,12 @@ export class SessionsService {
       });
 
       // 5. Mapeia a resposta final alterando o status visualmente
-      const seatsWithRealTimeStatus = session.seats.map(seat => {
+      const seatsWithRealTimeStatus = session.seats.map((seat) => {
         // Se o banco diz AVAILABLE, mas o Redis diz que tem lock...
-        if (seat.status === SeatStatus.AVAILABLE && lockedSeatIds.has(seat.id)) {
+        if (
+          seat.status === SeatStatus.AVAILABLE &&
+          lockedSeatIds.has(seat.id)
+        ) {
           return {
             ...seat,
             status: SeatStatus.LOCKED, // Marca como LOCKED para o cliente

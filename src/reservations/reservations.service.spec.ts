@@ -73,19 +73,22 @@ describe('ReservationsService', () => {
   describe('create', () => {
     it('deve criar reservas com sucesso (Happy Path)', async () => {
       // 1. Cenário
-      const dto = { 
-        seatIds: ['seat-1', 'seat-2'], 
-        userId: 'user-1' 
+      const dto = {
+        seatIds: ['seat-1', 'seat-2'],
+        userId: 'user-1',
       };
-      
+
       // Simula que os assentos existem e estão livres
-      mockPrismaService.seat.findMany.mockResolvedValue([{ 
-        id: 'seat-1', 
-        status: SeatStatus.AVAILABLE
-      }, {
-        id: 'seat-2',
-        status: SeatStatus.AVAILABLE
-      }]);
+      mockPrismaService.seat.findMany.mockResolvedValue([
+        {
+          id: 'seat-1',
+          status: SeatStatus.AVAILABLE,
+        },
+        {
+          id: 'seat-2',
+          status: SeatStatus.AVAILABLE,
+        },
+      ]);
 
       // Simula que o Redis CONSEGUIU o lock ('OK')
       mockRedisClient.set.mockResolvedValue('OK');
@@ -95,7 +98,7 @@ describe('ReservationsService', () => {
         id: 'res-1',
         seatId: 'seat-1',
         userId: 'user-1',
-        status: ReservationStatus.PENDING
+        status: ReservationStatus.PENDING,
       });
 
       // Simula a criação no banco da segunda reserva
@@ -115,10 +118,10 @@ describe('ReservationsService', () => {
       // Verifica se tentou pegar lock no Redis para cada assento
       expect(mockRedisClient.set).toHaveBeenCalledWith(
         'lock:seat:seat-1', // Chave correta
-        'user-1', 
-        'PX', 
-        30000, 
-        'NX' // Flag de atomicidade
+        'user-1',
+        'PX',
+        30000,
+        'NX', // Flag de atomicidade
       );
     });
 
@@ -126,13 +129,16 @@ describe('ReservationsService', () => {
       // 1. Cenário
       const dto = { seatIds: ['seat-1', 'seat-2'], userId: 'user-2' };
 
-      mockPrismaService.seat.findMany.mockResolvedValue([{ 
-        id: 'seat-1', 
-        status: SeatStatus.AVAILABLE 
-      }, {
-        id: 'seat-2',
-        status: SeatStatus.AVAILABLE
-      }]);
+      mockPrismaService.seat.findMany.mockResolvedValue([
+        {
+          id: 'seat-1',
+          status: SeatStatus.AVAILABLE,
+        },
+        {
+          id: 'seat-2',
+          status: SeatStatus.AVAILABLE,
+        },
+      ]);
 
       // Simula o Redis CONSEGUIU o lock do primeiro assento
       mockRedisClient.set.mockResolvedValueOnce('OK');
@@ -142,7 +148,7 @@ describe('ReservationsService', () => {
 
       // 2. Ação e Verificação
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
-      
+
       // Garante que NÃO tentou salvar no banco
       expect(mockPrismaService.reservation.create).not.toHaveBeenCalled();
     });
@@ -150,13 +156,16 @@ describe('ReservationsService', () => {
     it('deve lançar erro se o assento já estiver vendido (SOLD)', async () => {
       const dto = { seatIds: ['seat-sold', 'seat-2'], userId: 'user-1' };
 
-      mockPrismaService.seat.findMany.mockResolvedValue([{ 
-        id: 'seat-sold', 
-        status: SeatStatus.SOLD // Assento já vendido
-      }, {
-        id: 'seat-2',
-        status: SeatStatus.AVAILABLE
-      }]);
+      mockPrismaService.seat.findMany.mockResolvedValue([
+        {
+          id: 'seat-sold',
+          status: SeatStatus.SOLD, // Assento já vendido
+        },
+        {
+          id: 'seat-2',
+          status: SeatStatus.AVAILABLE,
+        },
+      ]);
 
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
       expect(mockRedisClient.set).not.toHaveBeenCalled(); // Nem tenta ir no Redis

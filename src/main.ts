@@ -7,13 +7,15 @@ import { Logger } from 'nestjs-pino';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
-  
+
   // Validação global dos DTOs
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,            // Remove chaves do JSON que não estão no DTO (Segurança)
-    forbidNonWhitelisted: true, // Retorna erro 400 se enviarem campos "estranhos"
-    transform: true,            // CRUCIAL: Transforma o JSON puro numa instância da Classe DTO
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, // Remove chaves do JSON que não estão no DTO (Segurança)
+      forbidNonWhitelisted: true, // Retorna erro 400 se enviarem campos "estranhos"
+      transform: true, // CRUCIAL: Transforma o JSON puro numa instância da Classe DTO
+    }),
+  );
 
   const config = new DocumentBuilder()
     .setTitle('Starsoft Backend Challenge')
@@ -22,8 +24,7 @@ async function bootstrap() {
     .addBearerAuth()
     .build();
 
-  const documentFactory = () => SwaggerModule
-    .createDocument(app, config);
+  const documentFactory = () => SwaggerModule.createDocument(app, config);
 
   SwaggerModule.setup('api-docs', app, documentFactory());
   await app.listen(parseInt(process.env.PORT || '3000'));

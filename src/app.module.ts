@@ -22,7 +22,7 @@ import { SalesModule } from './sales/sales.module';
       throttlers: [
         {
           ttl: seconds(60), // 60 segundos
-          limit: 10,  // 10 requisições
+          limit: 10, // 10 requisições
         },
       ],
       storage: new ThrottlerStorageRedisService({
@@ -39,7 +39,7 @@ import { SalesModule } from './sales/sales.module';
         level: (process.env.LOG_LEVEL || 'info').toLowerCase(),
         autoLogging: false, // Opcional: Evita logar cada requisição HTTP automaticamente se achar muito verboso
         redact: ['req.headers.authorization'], // Segurança: Esconde tokens
-        
+
         // Formatação customizada (Opcional)
         serializers: {
           req: (req) => ({
@@ -59,14 +59,14 @@ import { SalesModule } from './sales/sales.module';
     SessionsModule,
     ReservationsModule,
     NotificationsModule,
-    SalesModule
+    SalesModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
     {
       provide: APP_GUARD,
-      useClass: AppThrottlerGuard // Usa o guard customizado
+      useClass: AppThrottlerGuard, // Usa o guard customizado
     },
   ],
 })

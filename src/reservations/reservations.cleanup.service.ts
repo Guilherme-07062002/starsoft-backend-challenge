@@ -32,7 +32,9 @@ export class ReservationsCleanupService {
       return; // Nada para limpar
     }
 
-    this.logger.log(`Encontradas ${expiredReservations.length} reservas expiradas. Limpando...`);
+    this.logger.log(
+      `Encontradas ${expiredReservations.length} reservas expiradas. Limpando...`,
+    );
 
     // 2. Processa o cancelamento
     for (const reservation of expiredReservations) {
@@ -70,7 +72,7 @@ export class ReservationsCleanupService {
         },
         { persistent: true },
       );
-      
+
       this.logger.log(`Reserva ${reservation.id} cancelada por inatividade.`);
     }
   }

@@ -1,5 +1,11 @@
 import Redis from 'ioredis';
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateReservationDto } from './dto/reservations.dtos';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
@@ -51,7 +57,9 @@ export class ReservationsService {
               if (retryParsed?.status !== 'processing') return retryParsed;
             }
           }
-          throw new ConflictException('Requisição idempotente em processamento. Tente novamente.');
+          throw new ConflictException(
+            'Requisição idempotente em processamento. Tente novamente.',
+          );
         }
 
         return parsed;
@@ -77,99 +85,118 @@ export class ReservationsService {
     try {
       // 1. ORDENAÇÃO PARA EVITAR DEADLOCK (Critical Path)
       // Se User A pede [1, 2] e User B pede [2, 1], ambos tentarão lockar 1 primeiro.
-      const sortedSeatIds = [...seatIds].sort(); 
+      const sortedSeatIds = [...seatIds].sort();
 
-    // 2. Validação no Banco (Existe? Está Disponível?)
-    // Buscamos todos de uma vez
-    const seats = await this.prisma.seat.findMany({
-      where: { 
-        id: { in: sortedSeatIds } 
+      // 2. Validação no Banco (Existe? Está Disponível?)
+      // Buscamos todos de uma vez
+      const seats = await this.prisma.seat.findMany({
+        where: {
+          id: { in: sortedSeatIds },
+        },
+      });
+
+      // Validações básicas
+      if (seats.length !== sortedSeatIds.length) {
+        throw new NotFoundException(
+          'Um ou mais assentos não foram encontrados.',
+        );
       }
-    });
 
-    // Validações básicas
-    if (seats.length !== sortedSeatIds.length) {
-      throw new NotFoundException('Um ou mais assentos não foram encontrados.');
-    }
-
-    const soldSeats = seats.filter(s => s.status !== SeatStatus.AVAILABLE);
-    if (soldSeats.length > 0) {
-      if (soldSeats.length === 1) {
-        throw new ConflictException(`O assento ${soldSeats[0].number} já foi reservado.`);
-      } else {
-        throw new ConflictException(`Os assentos ${soldSeats.map(s => s.number).join(', ')} já foram reservados.`);
-      }
-    }
-
-    // 3. TENTATIVA DE LOCK NO REDIS (Iterativa)
-    const acquiredLocks: string[] = [];
-    const TTL = 30000; // 30s
-
-    try {
-      for (const seatId of sortedSeatIds) {
-        const lockKey = `lock:seat:${seatId}`;
-        const acquired = await this.redis.set(lockKey, userId, 'PX', TTL, 'NX');
-
-        if (!acquired) {
-          // Falhou no meio do caminho? Aborta tudo!
-          throw new ConflictException(`O assento ${seatId} acabou de ser reservado por outro usuário.`);
+      const soldSeats = seats.filter((s) => s.status !== SeatStatus.AVAILABLE);
+      if (soldSeats.length > 0) {
+        if (soldSeats.length === 1) {
+          throw new ConflictException(
+            `O assento ${soldSeats[0].number} já foi reservado.`,
+          );
+        } else {
+          throw new ConflictException(
+            `Os assentos ${soldSeats.map((s) => s.number).join(', ')} já foram reservados.`,
+          );
         }
-        acquiredLocks.push(lockKey);
       }
-    } catch (error) {
-      // ROLLBACK DOS LOCKS (Se pegou 2 de 3, solta os 2)
-      if (acquiredLocks.length > 0) {
-        await this.redis.del(...acquiredLocks);
-      }
-      throw error;
-    }
 
-    // 4. Se chegou aqui, todos os locks são nossos. Cria no Postgres.
-    // Precisamos de um ID de reserva único para o grupo ou reservas individuais?
-    // O requisito diz "Retornar ID da reserva". Geralmente é um "Order ID" ou cria várias reservas.
-    // Vamos criar várias reservas (uma por assento) mas retornar um Group ID seria ideal.
-    // Para simplificar e manter compatibilidade com seu schema atual, vamos criar N reservas.
-    
-    const expiresAt = new Date(Date.now() + TTL);
+      // 3. TENTATIVA DE LOCK NO REDIS (Iterativa)
+      const acquiredLocks: string[] = [];
+      const TTL = 30000; // 30s
 
-    // Usamos transaction para garantir que todas gravam
-    const reservations = await this.prisma.$transaction(
-      sortedSeatIds.map(seatId => 
-        this.prisma.reservation.create({
-          data: {
-            seatId,
+      try {
+        for (const seatId of sortedSeatIds) {
+          const lockKey = `lock:seat:${seatId}`;
+          const acquired = await this.redis.set(
+            lockKey,
             userId,
-            status: 'PENDING',
-            expiresAt,
+            'PX',
+            TTL,
+            'NX',
+          );
+
+          if (!acquired) {
+            // Falhou no meio do caminho? Aborta tudo!
+            throw new ConflictException(
+              `O assento ${seatId} acabou de ser reservado por outro usuário.`,
+            );
           }
-        })
-      )
-    );
+          acquiredLocks.push(lockKey);
+        }
+      } catch (error) {
+        // ROLLBACK DOS LOCKS (Se pegou 2 de 3, solta os 2)
+        if (acquiredLocks.length > 0) {
+          await this.redis.del(...acquiredLocks);
+        }
+        throw error;
+      }
 
-    // 5. Publicar Evento (Resolvendo lacuna 3)
-    // Como são várias, podemos publicar um evento de "BatchReserved" ou loop.
-    // Vamos no simples: Loop
-    reservations.forEach(res => {
-      this.amqpConnection.publish(
-        'cinema_events',
-        'reservation.created',
-        { ...res },
-        { persistent: true },
+      // 4. Se chegou aqui, todos os locks são nossos. Cria no Postgres.
+      // Precisamos de um ID de reserva único para o grupo ou reservas individuais?
+      // O requisito diz "Retornar ID da reserva". Geralmente é um "Order ID" ou cria várias reservas.
+      // Vamos criar várias reservas (uma por assento) mas retornar um Group ID seria ideal.
+      // Para simplificar e manter compatibilidade com seu schema atual, vamos criar N reservas.
+
+      const expiresAt = new Date(Date.now() + TTL);
+
+      // Usamos transaction para garantir que todas gravam
+      const reservations = await this.prisma.$transaction(
+        sortedSeatIds.map((seatId) =>
+          this.prisma.reservation.create({
+            data: {
+              seatId,
+              userId,
+              status: 'PENDING',
+              expiresAt,
+            },
+          }),
+        ),
       );
-    });
 
-    const response = {
-      message: 'Reservas realizadas com sucesso!',
-      // Retorna lista de IDs
-      reservationIds: reservations.map(r => r.id), 
-      // Resolvendo lacuna 2.2: Retornar timestamp explícito
-      expiresAt: expiresAt.toISOString(), 
-      expiresInSeconds: 30,
-    };
+      // 5. Publicar Evento (Resolvendo lacuna 3)
+      // Como são várias, podemos publicar um evento de "BatchReserved" ou loop.
+      // Vamos no simples: Loop
+      reservations.forEach((res) => {
+        this.amqpConnection.publish(
+          'cinema_events',
+          'reservation.created',
+          { ...res },
+          { persistent: true },
+        );
+      });
 
-    if (idemCacheKey) {
-      await this.redis.set(idemCacheKey, JSON.stringify(response), 'PX', 60000);
-    }
+      const response = {
+        message: 'Reservas realizadas com sucesso!',
+        // Retorna lista de IDs
+        reservationIds: reservations.map((r) => r.id),
+        // Resolvendo lacuna 2.2: Retornar timestamp explícito
+        expiresAt: expiresAt.toISOString(),
+        expiresInSeconds: 30,
+      };
+
+      if (idemCacheKey) {
+        await this.redis.set(
+          idemCacheKey,
+          JSON.stringify(response),
+          'PX',
+          60000,
+        );
+      }
 
       return response;
     } catch (error) {
@@ -197,7 +224,9 @@ export class ReservationsService {
     }
 
     if (reservation.status === ReservationStatus.CANCELLED) {
-      throw new BadRequestException('Esta reserva já foi cancelada ou expirou.');
+      throw new BadRequestException(
+        'Esta reserva já foi cancelada ou expirou.',
+      );
     }
 
     // Verifica se já passou do tempo de expiração do banco
@@ -248,7 +277,7 @@ export class ReservationsService {
       },
       { persistent: true },
     );
-    
+
     // Limpeza Opcional: Remove o Lock do Redis antecipadamente já que vendeu
     await this.redis.del(`lock:seat:${reservation.seatId}`);
 
@@ -263,7 +292,7 @@ export class ReservationsService {
       where: { userId },
     });
   }
- 
+
   async findAll() {
     return await this.prisma.reservation.findMany();
   }

@@ -1,7 +1,21 @@
-import { Controller, Get, Post, Body, Param, Headers, HttpCode } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Headers,
+  HttpCode,
+} from '@nestjs/common';
 import { ReservationsService } from './reservations.service';
 import { CreateReservationDto } from './dto/reservations.dtos';
-import { ApiHeader, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiHeader,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
 @ApiTags('Reservations (Reservas)')
 @Controller('reservations')
@@ -11,7 +25,10 @@ export class ReservationsController {
   @Post(':id/pay')
   @HttpCode(200) // Para indicar que é 200 OK, não 201 Created
   @ApiOperation({ summary: 'Confirma o pagamento de uma reserva' })
-  @ApiResponse({ status: 200, description: 'Pagamento confirmado e assento vendido.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Pagamento confirmado e assento vendido.',
+  })
   @ApiResponse({ status: 400, description: 'Reserva expirada.' })
   @ApiParam({ name: 'id', description: 'ID da reserva que será confirmada' })
   async confirmPayment(@Param('id') id: string) {
@@ -23,15 +40,22 @@ export class ReservationsController {
   @ApiHeader({
     name: 'Idempotency-Key',
     required: false,
-    description: 'Chave de idempotência para retries (mesma chave = mesma resposta).',
+    description:
+      'Chave de idempotência para retries (mesma chave = mesma resposta).',
   })
   @ApiResponse({ status: 201, description: 'Reserva criada.' })
-  @ApiResponse({ status: 409, description: 'Assento já ocupado (Race Condition).' })
+  @ApiResponse({
+    status: 409,
+    description: 'Assento já ocupado (Race Condition).',
+  })
   async create(
     @Body() createReservationDto: CreateReservationDto,
     @Headers('Idempotency-Key') idempotencyKey?: string,
   ) {
-    return await this.reservationsService.create(createReservationDto, idempotencyKey);
+    return await this.reservationsService.create(
+      createReservationDto,
+      idempotencyKey,
+    );
   }
 
   @Get(':userId')
