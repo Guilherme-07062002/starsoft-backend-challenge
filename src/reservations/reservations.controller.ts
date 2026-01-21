@@ -34,6 +34,13 @@ export class ReservationsController {
     return await this.reservationsService.create(createReservationDto, idempotencyKey);
   }
 
+  @Get(':userId')
+  @ApiOperation({ summary: 'Lista todas as reservas de um usuário' })
+  @ApiParam({ name: 'userId', description: 'ID do usuário' })
+  async findByUser(@Param('userId') userId: string) {
+    return await this.reservationsService.findByUser(userId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Lista todas as reservas' })
   async findAll() {

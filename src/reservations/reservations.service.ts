@@ -257,6 +257,12 @@ export class ReservationsService {
       reservation: result,
     };
   }
+
+  async findByUser(userId: string) {
+    return await this.prisma.reservation.findMany({
+      where: { userId },
+    });
+  }
  
   async findAll() {
     return await this.prisma.reservation.findMany();
