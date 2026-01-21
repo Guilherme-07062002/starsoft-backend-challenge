@@ -58,11 +58,20 @@ export class ReservationsController {
     );
   }
 
-  @Get(':userId')
+  @Get('user/:userId')
   @ApiOperation({ summary: 'Lista todas as reservas de um usuário' })
   @ApiParam({ name: 'userId', description: 'ID do usuário' })
   async findByUser(@Param('userId') userId: string) {
     return await this.reservationsService.findByUser(userId);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Obtém os detalhes de uma reserva' })
+  @ApiParam({ name: 'id', description: 'ID da reserva' })
+  @ApiResponse({ status: 200, description: 'Reserva encontrada.' })
+  @ApiResponse({ status: 404, description: 'Reserva não encontrada.' })
+  async findOne(@Param('id') id: string) {
+    return await this.reservationsService.findOne(id);
   }
 
   @Get()
