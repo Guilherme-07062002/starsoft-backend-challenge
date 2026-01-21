@@ -130,7 +130,12 @@ curl -X POST http://localhost:3000/reservations \
 curl -X POST http://localhost:3000/reservations/<reservation-id>/pay
 ```
 
-- `GET /reservations/history/:userId` histórico de compras (CONFIRMED)
+- `GET /reservations/:id` detalhes da reserva
+- `GET /users/:userId/reservations` reservas de um usuário
+
+### Vendas
+
+- `GET /sales/history/:userId` histórico de compras de um usuário
 
 ## 🧾 Logging
 

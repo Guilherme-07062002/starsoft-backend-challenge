@@ -1,9 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
+import { PinoLogger } from 'nestjs-pino';
 
 @Injectable()
 export class NotificationsService {
-  private readonly logger = new Logger(NotificationsService.name);
+  constructor(private readonly logger: PinoLogger) {
+    this.logger.setContext(NotificationsService.name);
+  }
 
   // 0. Escuta o evento de RESERVA CRIADA
   @RabbitSubscribe({
@@ -15,7 +18,7 @@ export class NotificationsService {
   public async handleReservationCreated(msg: any) {
     // Exemplo de consumidor: auditoria/analytics/observabilidade.
     // Se lançar exceção, o RabbitMQ pode redeliver conforme a configuração do broker.
-    this.logger.log(
+    this.logger.info(
       `[RESERVATION] Criada reserva ${msg?.id ?? msg?.reservationId ?? '(sem id)'} ` +
         `para user=${msg?.userId ?? '(sem user)'} seat=${msg?.seatId ?? '(sem seat)'}`,
     );
@@ -30,14 +33,14 @@ export class NotificationsService {
   })
   public async handlePaymentConfirmed(msg: any) {
     // Simula um processamento pesado (envio de email)
-    this.logger.log(
+    this.logger.info(
       `📧 [EMAIL SERVICE] Recebido evento de venda para: ${msg.userId}`,
     );
 
     // Simulação de delay (como se estivesse conectando no SMTP)
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    this.logger.log(
+    this.logger.info(
       `✅ [EMAIL SERVICE] Email de confirmação enviado para o assento ${msg.seatId}!`,
     );
 
@@ -65,7 +68,7 @@ export class NotificationsService {
     queueOptions: { durable: true },
   })
   public async handleSeatReleased(msg: any) {
-    this.logger.log(
+    this.logger.info(
       `🔓 [SEAT] Assento liberado ${msg.seatId} (reserva: ${msg.reservationId})`,
     );
   }
