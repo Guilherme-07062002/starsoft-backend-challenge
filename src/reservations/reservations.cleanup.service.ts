@@ -52,8 +52,8 @@ export class ReservationsCleanupService {
 
     const now = new Date();
 
-    // 1. Encontra reservas que são PENDING e já venceram (expiresAt < Agora)
     try {
+      // 1. Encontra IDs de reservas que são PENDING e já venceram
       const expiredReservations = await this.prisma.reservation.findMany({
         where: {
           status: ReservationStatus.PENDING,
@@ -61,7 +61,7 @@ export class ReservationsCleanupService {
             lt: now, // "Less Than" (Menor que) agora
           },
         },
-        include: { seat: true },
+        select: { id: true, seatId: true, userId: true }, // Otimização: pega só o que precisa
       });
 
       if (expiredReservations.length === 0) {
@@ -69,26 +69,39 @@ export class ReservationsCleanupService {
       }
 
       this.logger.info(
-        `Encontradas ${expiredReservations.length} reservas expiradas. Limpando...`,
+        `Encontradas ${expiredReservations.length} reservas expiradas. Limpando em lote...`,
       );
 
-      // 2. Processa o cancelamento (idempotente)
+      const reservationIds = expiredReservations.map((r) => r.id);
+      const seatLockKeys = expiredReservations.map(
+        (r) => `lock:seat:${r.seatId}`,
+      );
+
+      // 2. Cancela todas as reservas no banco DE UMA VEZ
+      const { count } = await this.prisma.reservation.updateMany({
+        where: {
+          id: { in: reservationIds },
+          status: ReservationStatus.PENDING, // Garante idempotência
+        },
+        data: { status: ReservationStatus.CANCELLED },
+      });
+
+      // Se count for 0, outra instância já processou.
+      if (count === 0) {
+        this.logger.info('Reservas já processadas por outra instância.');
+        return;
+      }
+
+      // 3. Remove todos os locks do Redis DE UMA VEZ
+      if (seatLockKeys.length > 0) {
+        await this.redis.del(seatLockKeys);
+      }
+
+      const timestamp = new Date().toISOString();
+
+      // 4. Publica os eventos (ainda em loop, mas as operações pesadas já foram)
       for (const reservation of expiredReservations) {
-        const cancelled = await this.prisma.reservation.updateMany({
-          where: {
-            id: reservation.id,
-            status: ReservationStatus.PENDING,
-            expiresAt: { lt: now },
-          },
-          data: { status: ReservationStatus.CANCELLED },
-        });
-
-        // Outra instância já processou
-        if (cancelled.count === 0) continue;
-
-        const timestamp = new Date().toISOString();
-
-        // 3. Publica evento de cancelamento
+        // Publica evento de cancelamento
         this.amqpConnection.publish(
           'cinema_events',
           'reservation.expired',
@@ -102,9 +115,7 @@ export class ReservationsCleanupService {
           { persistent: true },
         );
 
-        // 4. Remove lock e publica evento explícito de assento liberado
-        await this.redis.del(`lock:seat:${reservation.seatId}`);
-
+        // Publica evento de assento liberado
         this.amqpConnection.publish(
           'cinema_events',
           'seat.released',
@@ -117,11 +128,11 @@ export class ReservationsCleanupService {
           },
           { persistent: true },
         );
-
-        this.logger.info(
-          `Reserva ${reservation.id} cancelada por inatividade.`,
-        );
       }
+
+      this.logger.info(
+        `${count} reservas expiradas foram canceladas e seus assentos liberados.`,
+      );
     } finally {
       await this.releaseLock(lockKey, token);
     }
