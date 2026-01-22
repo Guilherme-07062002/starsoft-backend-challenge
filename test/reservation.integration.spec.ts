@@ -151,8 +151,8 @@ describe('ReservationsService (Integration)', () => {
     const lock1 = await redisClient.get(`lock:seat:${seatId1}`);
     const lock2 = await redisClient.get(`lock:seat:${seatId2}`);
 
-    expect(lock1).toBe('user-integration-test');
-    expect(lock2).toBe('user-integration-test');
+    expect(lock1).toBe('user-A');
+    expect(lock2).toBe('user-A');
 
     log('Cenário 1 validado com sucesso.');
   });

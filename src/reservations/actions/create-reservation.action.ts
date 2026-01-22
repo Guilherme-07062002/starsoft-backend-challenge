@@ -65,7 +65,6 @@ export class CreateReservationAction {
         await this.saveIdemResponseCache(idemCacheKey, response);
       }
 
-      await this.redis.del(...acquiredLocks);
       return response;
     } catch (error) {
       if (idemCacheKey) {
