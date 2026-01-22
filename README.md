@@ -72,6 +72,14 @@ Dica: se quiser serializar no mesmo processo:
 yarn test --runInBand
 ```
 
+### Testes de Integração
+
+Para rodar os testes de integração (que sobem containers Docker para Postgres, Redis e RabbitMQ) simulando concorrência em um ambiente real:
+
+```bash
+yarn test:integration
+```
+
 ## 🧠 Estratégias Implementadas
 
 ### 1) Race Conditions (double-booking)

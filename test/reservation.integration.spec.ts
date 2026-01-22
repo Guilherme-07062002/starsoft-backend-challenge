@@ -23,8 +23,6 @@ const log = (...args: unknown[]) =>
 
 describe('ReservationsService (Integration)', () => {
   let service: ReservationsService;
-  let createReservationAction: CreateReservationAction;
-  let confirmPaymentAction: ConfirmPaymentAction;
   let prismaService: PrismaService;
   let redisClient: Redis;
 
@@ -76,11 +74,6 @@ describe('ReservationsService (Integration)', () => {
     }).compile();
 
     service = module.get<ReservationsService>(ReservationsService);
-    createReservationAction = module.get<CreateReservationAction>(
-      CreateReservationAction,
-    );
-    confirmPaymentAction =
-      module.get<ConfirmPaymentAction>(ConfirmPaymentAction);
     prismaService = module.get<PrismaService>(PrismaService);
     redisClient = module.get('REDIS_CLIENT');
 
@@ -131,7 +124,7 @@ describe('ReservationsService (Integration)', () => {
 
     // B. EXECUTA A AÇÃO
     const dto = {
-      userId: 'user-integration-test',
+      userId: 'user-A',
       seatIds: [seatId1, seatId2],
     };
 
