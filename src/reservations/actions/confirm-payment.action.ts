@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ReservationStatus, SeatStatus } from '@prisma/client';
+import { Reservation, ReservationStatus, SeatStatus } from '@prisma/client';
 import Redis from 'ioredis';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -20,40 +20,14 @@ export class ConfirmPaymentAction {
 
   async execute(reservationId: string) {
     const now = new Date();
-
-    // 1. Busca a reserva
     const reservation = await this.prisma.reservation.findUnique({
       where: { id: reservationId },
       include: { seat: { include: { session: true } } },
     });
 
-    if (!reservation) {
-      throw new NotFoundException('Reserva não encontrada.');
-    }
+    const validationResult = await this.ensureReservationIsPayable(reservation);
+    if (validationResult) return validationResult;
 
-    // 2. Validações de Regra de Negócio
-    if (reservation.status === ReservationStatus.CONFIRMED) {
-      return { message: 'Pagamento já foi processado anteriormente.' };
-    }
-
-    if (reservation.status === ReservationStatus.CANCELLED) {
-      throw new BadRequestException(
-        'Esta reserva já foi cancelada ou expirou.',
-      );
-    }
-
-    // Verifica se já passou do tempo de expiração do banco
-    if (now > reservation.expiresAt) {
-      // Opcional: Já marca como cancelada se estiver vencida
-      await this.prisma.reservation.update({
-        where: { id: reservationId },
-        data: { status: ReservationStatus.CANCELLED },
-      });
-      throw new BadRequestException('Tempo de reserva expirado.');
-    }
-
-    // 3. Transação: Confirma Reserva E Marca Assento como Vendido
-    // Observação: usamos updateMany para garantir consistência sob concorrência.
     const txResult = await this.prisma.$transaction(async (tx) => {
       const confirmAttempt = await tx.reservation.updateMany({
         where: {
@@ -96,11 +70,9 @@ export class ConfirmPaymentAction {
       });
 
       if (seatSold.count === 0) {
-        // Se o assento já não está AVAILABLE, aborta para evitar inconsistência
         throw new ConflictException('Assento já foi vendido.');
       }
 
-      // Cria/garante registro de venda (idempotência)
       await tx.sale.upsert({
         where: { reservationId },
         create: {
@@ -123,8 +95,6 @@ export class ConfirmPaymentAction {
 
     const result = txResult.reservation;
 
-    // 4. Publica Evento no RabbitMQ (Fire and Forget)
-    // Routing Key: "payment.confirmed"
     if (txResult.confirmedNow) {
       const sessionPrice = reservation.seat.session.price;
       this.amqpConnection.publish(
@@ -141,12 +111,36 @@ export class ConfirmPaymentAction {
       );
     }
 
-    // Limpeza Opcional: Remove o Lock do Redis antecipadamente já que vendeu
     await this.redis.del(`lock:seat:${reservation.seatId}`);
 
     return {
       message: 'Pagamento confirmado! Bom filme.',
       reservation: result,
     };
+  }
+
+  private async ensureReservationIsPayable(reservation: Reservation | null) {
+    const now = new Date();
+    if (!reservation) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
+
+    if (reservation.status === ReservationStatus.CONFIRMED) {
+      return { message: 'Pagamento já foi processado anteriormente.' };
+    }
+
+    if (reservation.status === ReservationStatus.CANCELLED) {
+      throw new BadRequestException(
+        'Esta reserva já foi cancelada ou expirou.',
+      );
+    }
+
+    if (now > reservation.expiresAt) {
+      await this.prisma.reservation.update({
+        where: { id: reservation.id },
+        data: { status: ReservationStatus.CANCELLED },
+      });
+      throw new BadRequestException('Tempo de reserva expirado.');
+    }
   }
 }
