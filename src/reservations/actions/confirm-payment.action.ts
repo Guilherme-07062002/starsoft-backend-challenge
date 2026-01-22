@@ -13,7 +13,7 @@ import {
   SeatStatus,
 } from '@prisma/client';
 import Redis from 'ioredis';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 // Define o tipo exato com os includes
 type ReservationWithSession = Prisma.ReservationGetPayload<{

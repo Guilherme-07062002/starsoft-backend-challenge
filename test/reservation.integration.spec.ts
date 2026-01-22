@@ -10,6 +10,8 @@ import { execSync } from 'child_process';
 import Redis from 'ioredis';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ConflictException } from '@nestjs/common';
+import { CreateReservationAction } from '../src/reservations/actions/create-reservation.action';
+import { ConfirmPaymentAction } from '../src/reservations/actions/confirm-payment.action';
 
 // Aumenta o timeout do Jest pois subir containers leva alguns segundos
 jest.setTimeout(60000);
@@ -21,6 +23,8 @@ const log = (...args: unknown[]) =>
 
 describe('ReservationsService (Integration)', () => {
   let service: ReservationsService;
+  let createReservationAction: CreateReservationAction;
+  let confirmPaymentAction: ConfirmPaymentAction;
   let prismaService: PrismaService;
   let redisClient: Redis;
 
@@ -54,6 +58,8 @@ describe('ReservationsService (Integration)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReservationsService,
+        CreateReservationAction,
+        ConfirmPaymentAction,
         PrismaService,
         {
           provide: 'REDIS_CLIENT',
@@ -70,6 +76,11 @@ describe('ReservationsService (Integration)', () => {
     }).compile();
 
     service = module.get<ReservationsService>(ReservationsService);
+    createReservationAction = module.get<CreateReservationAction>(
+      CreateReservationAction,
+    );
+    confirmPaymentAction =
+      module.get<ConfirmPaymentAction>(ConfirmPaymentAction);
     prismaService = module.get<PrismaService>(PrismaService);
     redisClient = module.get('REDIS_CLIENT');
 

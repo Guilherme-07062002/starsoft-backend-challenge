@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CreateSessionDto } from './dto/sessions.dtos';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { SeatStatus } from '@prisma/client';
 import Redis from 'ioredis';
 
@@ -91,9 +91,7 @@ export class SessionsService {
    * @returns Lista de sessões com assentos
    */
   async findAll() {
-    return this.prisma.session.findMany({
-      include: { seats: { orderBy: { number: 'asc' } } },
-    });
+    return this.prisma.session.findMany();
   }
 
   /**

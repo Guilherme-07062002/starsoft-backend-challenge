@@ -1,7 +1,7 @@
 import Redis from 'ioredis';
 import { Inject, Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { PinoLogger } from 'nestjs-pino';
 import { randomUUID } from 'crypto';
