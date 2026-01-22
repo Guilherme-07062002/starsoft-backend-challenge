@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { AmqpConnection } from '@golevelup/nestjs-rabbitmq';
 import { ReservationStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -148,11 +152,9 @@ describe('ReservationsService', () => {
         },
       });
 
-      const result = await action.execute(reservationId);
-
-      expect(result).toEqual({
-        message: 'Pagamento já foi processado anteriormente.',
-      });
+      await expect(action.execute(reservationId)).rejects.toThrow(
+        ConflictException,
+      );
       expect(mockPrismaService.$transaction).not.toHaveBeenCalled();
       expect(mockAmqpConnection.publish).not.toHaveBeenCalled();
     });
