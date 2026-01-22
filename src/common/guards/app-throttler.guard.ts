@@ -5,6 +5,11 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 export class AppThrottlerGuard extends ThrottlerGuard {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const type = context.getType();
+    const path = context.switchToHttp().getRequest().url;
+
+    if (path === '/metrics') {
+      return true;
+    }
 
     if (type !== 'http') return true;
 
