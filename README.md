@@ -22,6 +22,8 @@ Documentação Swagger: `http://localhost:3000/api-docs`
 - **Prisma:** produtividade + type-safety
 - **Redis:** coordenação distribuída e locks atômicos (`SET NX PX`) para evitar double-booking
 - **RabbitMQ:** mensageria e desacoplamento de consumidores (notificações/analytics)
+- **Prometheus:** Coleta de métricas de performance e saúde da aplicação.
+- **Grafana:** Visualização de métricas e criação de dashboards para monitoramento.
 
 ## 🧰 Como Executar (Docker)
 
@@ -29,7 +31,7 @@ Pré-requisitos:
 
 - Docker + Docker Compose
 
-Subir tudo com um comando (API + Postgres + Redis + RabbitMQ):
+Subir tudo com um comando (API + Postgres + Redis + RabbitMQ + Observabilidade):
 
 ```bash
 docker compose up --build
@@ -40,6 +42,10 @@ Serviços:
 - API: `http://localhost:3000`
 - Swagger: `http://localhost:3000/api-docs`
 - RabbitMQ Management: `http://localhost:15672` (user/pass: `user` / `pass`)
+- **Health Check**: `http://localhost:3000/health`
+- **API Metrics**: `http://localhost:3000/metrics`
+- **Prometheus**: `http://localhost:9090`
+- **Grafana**: `http://localhost:3001` (user/pass: `admin` / `admin`)
 
 ### Como Popular Dados Iniciais
 
@@ -59,6 +65,34 @@ curl -X POST http://localhost:3000/sessions \
         "seatsPerRow": 4
     }'
 ```
+
+## ❤️ Health Check
+
+A aplicação expõe um endpoint `GET /health` que verifica a saúde da API e de suas dependências críticas. Ele é essencial para monitoramento e para orquestradores de contêineres (como o Docker Compose em modo `service_healthy` ou Kubernetes).
+
+O endpoint retorna o status `200 OK` se todos os serviços estiverem saudáveis. Os serviços verificados são:
+
+- **Memória:** Checa se o uso de memória (heap) da aplicação está dentro de um limite seguro.
+- **Database:** Garante que a API consegue se conectar ao PostgreSQL.
+- **Redis:** Verifica a conexão com o servidor Redis.
+- **RabbitMQ:** Assegura que a conexão com o broker de mensageria está ativa.
+
+## 🔭 Observabilidade (Prometheus + Grafana)
+
+O projeto inclui uma stack de monitoramento para observabilidade em tempo real.
+
+1.  **Coleta de Métricas:** A API NestJS expõe um endpoint `/metrics` (via `@willsoto/nestjs-prometheus`) que é consumido pelo **Prometheus**.
+2.  **Visualização:** O **Grafana** vem pré-configurado para usar o Prometheus como fonte de dados.
+
+### Como usar:
+
+1.  Acesse o Grafana em `http://localhost:3001` (login: `admin`/`admin`).
+2.  Vá em "Connections" > "Data sources" e você verá que o Prometheus já está configurado.
+3.  Vá em "Dashboards" e crie um novo painel.
+4.  Use o "Query Explorer" para consultar as métricas disponíveis, como:
+    - `http_request_duration_seconds_bucket`: Histograma com a latência das requisições da API.
+    - `nodejs_heap_size_used_bytes`: Uso de memória da aplicação.
+    - E muitas outras métricas padrão do Node.js.
 
 ## 🧪 Testes
 
