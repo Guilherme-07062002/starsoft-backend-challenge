@@ -18,7 +18,7 @@ const mockTx = {
     updateMany: jest.fn(),
   },
   sale: {
-    upsert: jest.fn(),
+    create: jest.fn(),
   },
 };
 
@@ -107,7 +107,7 @@ describe('ReservationsService', () => {
 
       mockTx.reservation.updateMany.mockResolvedValue({ count: 1 });
       mockTx.seat.updateMany.mockResolvedValue({ count: 1 });
-      mockTx.sale.upsert.mockResolvedValue({ id: 'sale-1' });
+      mockTx.sale.create.mockResolvedValue({ id: 'sale-1' });
       mockTx.reservation.findUnique.mockResolvedValue({
         id: reservationId,
         userId: 'user-1',

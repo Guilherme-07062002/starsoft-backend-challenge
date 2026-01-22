@@ -34,37 +34,34 @@ export class ConfirmPaymentAction {
       where: { id: reservationId },
       include: { seat: { include: { session: true } } },
     });
+    if (!reservation) {
+      throw new NotFoundException('Reserva não encontrada.');
+    }
 
     await this.ensureReservationIsPayable(reservation);
 
-    const transaction = await this.prisma.$transaction(async (tx) => {
+    const transactionResult = await this.prisma.$transaction(async (tx) => {
       await this.confirmReservation(tx, reservation, now);
 
       await this.updateSeatsToSold(tx, reservation);
 
-      return this.upsertSaleRecord(tx, reservation);
+      return this.createSaleRecord(tx, reservation);
     });
 
-    const result = transaction.reservation;
-
-    if (transaction.confirmedNow) {
-      await this.sendEventPaymentConfirmed(reservation, result);
-    }
+    await this.sendEventPaymentConfirmed(reservation, transactionResult.saleId);
 
     await this.redis.del(`lock:seat:${reservation.seatId}`);
 
     return {
       message: 'Pagamento confirmado! Bom filme.',
-      reservation: result,
+      reservation: transactionResult.reservation,
     };
   }
 
-  private async ensureReservationIsPayable(reservation: Reservation | null) {
+  private async ensureReservationIsPayable(
+    reservation: ReservationWithSession,
+  ) {
     const now = new Date();
-    if (!reservation) {
-      throw new NotFoundException('Reserva não encontrada.');
-    }
-
     if (reservation.status === ReservationStatus.CONFIRMED) {
       throw new ConflictException('Pagamento já confirmado para esta reserva.');
     }
@@ -96,7 +93,7 @@ export class ConfirmPaymentAction {
     reservation: Reservation,
     now: Date,
   ) {
-    const confirmAttempt = await tx.reservation.updateMany({
+    const result = await tx.reservation.updateMany({
       where: {
         id: reservation.id,
         status: ReservationStatus.PENDING,
@@ -105,16 +102,19 @@ export class ConfirmPaymentAction {
       data: { status: ReservationStatus.CONFIRMED },
     });
 
-    if (confirmAttempt.count === 0) {
-      const latest = await tx.reservation.findUnique({
+    if (result.count === 0) {
+      const current = await tx.reservation.findUnique({
         where: { id: reservation.id },
       });
 
-      this.checkReservationStatusForUpdate(latest);
+      if (current?.status === ReservationStatus.CONFIRMED) {
+        throw new ConflictException(
+          'Reserva já foi paga processada concorrentemente.',
+        );
+      }
 
-      // Em caso de corrida ou inconsistência, falha de forma segura
       throw new ConflictException(
-        'Não foi possível confirmar o pagamento (reserva já processada).',
+        'Não foi possível confirmar (Expirada ou Cancelada).',
       );
     }
   }
@@ -138,57 +138,38 @@ export class ConfirmPaymentAction {
     }
   }
 
-  private async upsertSaleRecord(
+  private async createSaleRecord(
     tx: Prisma.TransactionClient,
     reservation: ReservationWithSession,
   ) {
-    await tx.sale.upsert({
-      where: { reservationId: reservation.id },
-      create: {
+    const sale = await tx.sale.create({
+      data: {
         reservationId: reservation.id,
         amount: reservation.seat.session.price,
       },
-      update: {},
     });
 
-    const updated = await tx.reservation.findUnique({
-      where: { id: reservation.id },
-    });
-
-    if (!updated) {
-      throw new NotFoundException('Reserva não encontrada.');
-    }
-
-    return { reservation: updated, confirmedNow: true };
-  }
-
-  private checkReservationStatusForUpdate(reservation: Reservation | null) {
-    if (!reservation) {
-      throw new NotFoundException('Reserva não encontrada.');
-    }
-
-    if (reservation?.status === ReservationStatus.CONFIRMED) {
-      return { reservation, confirmedNow: false };
-    }
-
-    if (reservation?.status === ReservationStatus.CANCELLED) {
-      throw new BadRequestException(
-        'Esta reserva já foi cancelada ou expirou.',
-      );
-    }
+    return {
+      saleId: sale.id,
+      reservation: {
+        ...reservation,
+        status: ReservationStatus.CONFIRMED,
+      },
+    };
   }
 
   private async sendEventPaymentConfirmed(
     reservation: ReservationWithSession,
-    result: Reservation,
+    saleId: string,
   ) {
     const sessionPrice = reservation.seat.session.price;
     await this.amqpConnection.publish(
       'cinema_events',
       'payment.confirmed',
       {
-        reservationId: result.id,
-        userId: result.userId,
+        reservationId: reservation.id,
+        saleId: saleId,
+        userId: reservation.userId,
         seatId: reservation.seatId,
         amount: sessionPrice.toString(),
         timestamp: new Date().toISOString(),
