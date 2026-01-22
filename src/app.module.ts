@@ -12,6 +12,7 @@ import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { LoggerModule } from 'nestjs-pino';
 import { SalesModule } from './sales/sales.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { SalesModule } from './sales/sales.module';
     ReservationsModule,
     NotificationsModule,
     SalesModule,
+    HealthModule,
   ],
   providers: [
     {
