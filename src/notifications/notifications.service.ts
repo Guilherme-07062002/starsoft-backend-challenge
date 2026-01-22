@@ -3,22 +3,12 @@ import { RabbitSubscribe } from '@golevelup/nestjs-rabbitmq';
 import { PinoLogger } from 'nestjs-pino';
 import { createExponentialRetryErrorHandler } from '../rabbitmq/rabbitmq.retry';
 
-/**
- * Serviço responsável por escutar eventos do RabbitMQ relacionados a notificações.
- * Ele consome eventos como criação de reservas, confirmações de pagamento,
- * expiração de reservas e liberação de assentos, realizando ações como
- * logging e simulação de envio de emails.
- */
 @Injectable()
 export class NotificationsService {
   constructor(private readonly logger: PinoLogger) {
     this.logger.setContext(NotificationsService.name);
   }
 
-  /**
-   * Escuta o evento de CRIAÇÃO DE RESERVA
-   * @param msg - Mensagem recebida do RabbitMQ contendo detalhes da reserva criada.
-   */
   @RabbitSubscribe({
     exchange: 'cinema_events',
     routingKey: 'reservation.created',
@@ -32,18 +22,12 @@ export class NotificationsService {
     seatId: string;
     reservationId: string;
   }) {
-    // Exemplo de consumidor: auditoria/analytics/observabilidade.
-    // Se lançar exceção, o RabbitMQ pode reenfileirar a mensagem (dependendo da configuração).
     this.logger.info(
       `🔒 [RESERVATION] Criada reserva ${msg?.id ?? msg?.reservationId ?? '(sem id)'} ` +
         `para o usuário=${msg?.userId ?? '(sem usuário)'} assento=${msg?.seatId ?? '(sem assento)'}`,
     );
   }
 
-  /**
-   * Escuta o evento de CONFIRMAÇÃO DE PAGAMENTO
-   * @param msg - Mensagem recebida do RabbitMQ contendo detalhes do pagamento confirmado.
-   */
   @RabbitSubscribe({
     exchange: 'cinema_events',
     routingKey: 'payment.confirmed',
@@ -56,25 +40,17 @@ export class NotificationsService {
     seatId: string;
     reservationId: string;
   }) {
-    // Simula um processamento pesado (envio de email)
     this.logger.info(
       `📧 [EMAIL SERVICE] Recebido evento de venda para: ${msg.userId}`,
     );
 
-    // Simulação de delay (como se estivesse conectando no SMTP)
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     this.logger.info(
       `✅ [EMAIL SERVICE] Email de confirmação enviado para usuário ${msg.userId} que comprou o assento ${msg.seatId}!`,
     );
-
-    // Se der erro aqui, cai no retry com backoff (cinema_retry_queue) e depois DLQ.
   }
 
-  /**
-   * Escuta o evento de EXPIRAÇÃO DE RESERVA
-   * @param msg - Mensagem recebida do RabbitMQ contendo detalhes da reserva expirada.
-   */
   @RabbitSubscribe({
     exchange: 'cinema_events',
     routingKey: 'reservation.expired',
@@ -92,10 +68,6 @@ export class NotificationsService {
     );
   }
 
-  /**
-   * Escuta o evento de LIBERAÇÃO DE ASSENTO
-   * @param msg - Mensagem recebida do RabbitMQ contendo detalhes do assento liberado.
-   */
   @RabbitSubscribe({
     exchange: 'cinema_events',
     routingKey: 'seat.released',

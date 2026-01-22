@@ -8,10 +8,6 @@ export class DlqConsumer {
     this.logger.setContext(DlqConsumer.name);
   }
 
-  /**
-   * Escuta todas as mensagens que chegam na Dead Letter Queue (DLQ)
-   * @param msg - Mensagem recebida do RabbitMQ que foi enviada para a DLQ.
-   */
   @RabbitSubscribe({
     exchange: 'cinema_dlq',
     routingKey: '#',
@@ -19,7 +15,6 @@ export class DlqConsumer {
     queueOptions: { durable: true },
   })
   public async handleDlqMessage(msg: any) {
-    // Observabilidade: Aqui é possível monitorar mensagens que foram para a DLQ
     this.logger.error(
       { msg },
       '[DLQ] Mensagem enviada para a Dead Letter Queue',

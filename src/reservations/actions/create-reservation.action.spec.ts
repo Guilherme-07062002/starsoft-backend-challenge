@@ -64,7 +64,7 @@ describe('CreateReservationsAction', () => {
           useValue: mockPrismaService,
         },
         {
-          provide: 'REDIS_CLIENT', // O mesmo nome que usamos no @Inject
+          provide: 'REDIS_CLIENT',
           useValue: mockRedisClient,
         },
         {

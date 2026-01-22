@@ -42,7 +42,6 @@ export class HealthController {
   private async checkRedis(): Promise<HealthIndicatorResult> {
     const indicator = this.healthIndicatorService.check('redis');
     try {
-      // Envia um comando PING rápido para o Redis
       const pong = await this.redis.ping();
 
       if (pong !== 'PONG') {
