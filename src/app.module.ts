@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { ReservationsModule } from './reservations/reservations.module';
@@ -13,15 +13,20 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { LoggerModule } from 'nestjs-pino';
 import { SalesModule } from './sales/sales.module';
 import { HealthModule } from './health/health.module';
+import {
+  makeHistogramProvider,
+  PrometheusModule,
+} from '@willsoto/nestjs-prometheus';
+import { LoggingMetricInterceptor } from './common/interceptors/logging-metric.interceptor';
 
 @Module({
   imports: [
-    // Configuração do Rate Limiting, está configurado para 10 requisições por minuto por IP
+    // Infra
     ThrottlerModule.forRoot({
       throttlers: [
         {
-          ttl: seconds(60), // 60 segundos
-          limit: 10, // 10 requisições
+          ttl: seconds(60),
+          limit: 10,
         },
       ],
       storage: new ThrottlerStorageRedisService({
@@ -30,16 +35,13 @@ import { HealthModule } from './health/health.module';
         // password: process.env.REDIS_PASSWORD se houver senha
       }),
     }),
-
-    // Infra
-    ScheduleModule.forRoot(), // O forRoot inicializa o módulo de agendamento
+    ScheduleModule.forRoot(),
     LoggerModule.forRoot({
       pinoHttp: {
         level: (process.env.LOG_LEVEL || 'info').toLowerCase(),
-        autoLogging: false, // Opcional: Evita logar cada requisição HTTP automaticamente se achar muito verboso
-        redact: ['req.headers.authorization'], // Segurança: Esconde tokens
+        autoLogging: false,
+        redact: ['req.headers.authorization'],
 
-        // Formatação customizada (Opcional)
         serializers: {
           req: (req) => ({
             id: req.id,
@@ -48,6 +50,12 @@ import { HealthModule } from './health/health.module';
             // user: req.raw.user?.id // Se quiser logar o ID do usuário logado
           }),
         },
+      },
+    }),
+    PrometheusModule.register({
+      path: '/metrics',
+      defaultMetrics: {
+        enabled: true,
       },
     }),
     PrismaModule,
@@ -64,7 +72,18 @@ import { HealthModule } from './health/health.module';
   providers: [
     {
       provide: APP_GUARD,
-      useClass: AppThrottlerGuard, // Usa o guard customizado para Rate Limiting
+      useClass: AppThrottlerGuard,
+    },
+    // Cria a métrica personalizada
+    makeHistogramProvider({
+      name: 'http_request_duration_seconds',
+      help: 'Duration of HTTP requests in seconds',
+      labelNames: ['method', 'route', 'code'],
+      buckets: [0.1, 0.3, 0.5, 1, 1.5, 2, 5], // Buckets de tempo (s)
+    }),
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingMetricInterceptor,
     },
   ],
 })
